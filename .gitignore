@@ -1,0 +1,5 @@
+Cekme
+.vscode
+*.o
+*.out
+*.exe

@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdlib>
 #include <cstdint>
+#include <string>
 
 using namespace std;
 
@@ -18,16 +19,34 @@ struct Node {
 class SparseMatrix {
 private:
     Node* head;
-    int size;
+    int size; // dimension of the matrix, n x n
+
+    void clear() {
+        if (!head) {
+            return;
+        }
+
+        Node* current = head;
+        do {
+            Node* temp = current;
+            current = current->next;
+            delete temp;
+        } while (current != head);
+        head = nullptr;
+    }
+
 public:
-    SparseMatrix(int size) : head(nullptr), size(size) {}
+    SparseMatrix(int n) : head(nullptr), size(n) {}
+    ~SparseMatrix() {
+        clear();
+    }
 
     void insert(int row, int col, int value) {
         // If the value is 0, do not insert
         if (value == 0) {
             return;
         }
-        // Create a new node and insert it to the circular linked list
+
         Node* newNode = new Node(row, col, value);
 
         if (!head) {
@@ -48,64 +67,96 @@ public:
         }
     }
 
-    static SparseMatrix createRandomMatrix(int n) {
-        // Create a random n x n sparse matrix with random values
-        SparseMatrix matrix(n);
+    static SparseMatrix* createRandomMatrix(int n) {
+        // Create an n x n sparse matrix with random values
+        SparseMatrix* matrix = new SparseMatrix(n);
         for (int i = 0; i < n; ++i) {
             for (int j = 0; j < n; ++j) {
-                matrix.insert(i, j, rand() % 100);
+                matrix->insert(i, j, rand() % 100);
             }
         }
         return matrix;
     }
 
-    SparseMatrix add(SparseMatrix& B) {
+    SparseMatrix* add(SparseMatrix* B) {
+        if (!B->head) {
+            return this;
+        }
+        if (!head) {
+            return B;
+        }
         // Sum of two sparse matrices A and B
-        SparseMatrix sumC(size);
-        Node* a = head, * b = B.head;
+        SparseMatrix* sumC = new SparseMatrix(size);
+
+        Node* a = head, * b = B->head;
+        // Both lists are non-empty and sorted
+
         // Traverse the circular linked lists of A and B to calculate the sum
         // A and B are sorted by row and column indices
         do {
             if (a->row < b->row || (a->row == b->row && a->col < b->col)) {
-                sumC.insert(a->row, a->col, a->value);
+                sumC->insert(a->row, a->col, a->value);
                 a = a->next;
             } else if (a->row > b->row || (a->row == b->row && a->col > b->col)) {
-                sumC.insert(b->row, b->col, b->value);
+                sumC->insert(b->row, b->col, b->value);
                 b = b->next;
             } else {
-                sumC.insert(a->row, a->col, a->value + b->value);
+                // same (row, col)
+                sumC->insert(a->row, a->col, a->value + b->value);
                 a = a->next;
                 b = b->next;
             }
-        } while (a != head && b != B.head);
+        } while (a != head && b != B->head);
 
-        // return the sum matrix
         return sumC;
     }
 
-    SparseMatrix scalarMultiply(int scalar) {
-        SparseMatrix C(size);
+    SparseMatrix* scalarMultiply(int scalar) {
+        if (scalar == 0 || !head) {
+            SparseMatrix* zeroMatrix = new SparseMatrix(size);
+            return zeroMatrix;
+        }
+        SparseMatrix* C = new SparseMatrix(size);
+
         Node* a = head;
         do {
-            C.insert(a->row, a->col, a->value * scalar);
+            C->insert(a->row, a->col, a->value * scalar);
             a = a->next;
         } while (a != head);
+
         return C;
     }
 
-    SparseMatrix transpose() {
-        SparseMatrix T(size);
+    SparseMatrix* transpose() {
+        if (!head) {
+            SparseMatrix* zeroMatrix = new SparseMatrix(size);
+            return zeroMatrix;
+        }
+        SparseMatrix* T = new SparseMatrix(size);
+
         Node* a = head;
         do {
             // Transpose the matrix by swapping the row and column indices
-            T.insert(a->col, a->row, a->value);
+            T->insert(a->col, a->row, a->value);
             a = a->next;
         } while (a != head);
+
         return T;
     }
 
-    void print(string name) {
-        cout << name << ": " << endl;
+    void print(const string& name) {
+        cout << name << ":\n";
+        if (!head) {
+            // Matrix is empty, so everything is 0
+            for (int i = 0; i < size; ++i) {
+                for (int j = 0; j < size; ++j) {
+                    cout << "0 ";
+                }
+                cout << "\n";
+            }
+            return;
+        }
+
         Node* a = head;
         // Traverse the circular linked list to print the matrix
         // If a node with the same row and column indices is found, print its value
@@ -119,7 +170,7 @@ public:
                     cout << "0 ";
                 }
             }
-            cout << endl;
+            cout << "\n";
         }
     }
 };
@@ -134,29 +185,37 @@ int main(int argc, char* argv[]) {
         }
     }
     if (n < 1 || s == INT32_MAX) {
-        cout << "Usage: make\n./basic_matrix_operations -n <size> -s <scalar>\nmake clean" << endl;
+        cout << "Usage: make\n./basic_matrix_operations -n <size> -s <scalar>\nmake clean\n";
         return 1;
     }
 
     cout << "# Addition of two " << n << "x" << n << " random matrices\n";
-    SparseMatrix A = SparseMatrix::createRandomMatrix(n);
-    SparseMatrix B = SparseMatrix::createRandomMatrix(n);
-    SparseMatrix C = A.add(B);
-    A.print("A");
-    B.print("B");
-    C.print("C");
+    SparseMatrix* A = SparseMatrix::createRandomMatrix(n);
+    SparseMatrix* B = SparseMatrix::createRandomMatrix(n);
+    SparseMatrix* C = A->add(B);
+    A->print("A");
+    B->print("B");
+    C->print("C");
 
     cout << "\n# Scalar multiplication of " << n << "x" << n << " matrix by " << s << "\n";
-    SparseMatrix D = SparseMatrix::createRandomMatrix(n);
-    SparseMatrix E = D.scalarMultiply(s);
-    D.print("D");
-    E.print("E");
+    SparseMatrix* D = SparseMatrix::createRandomMatrix(n);
+    SparseMatrix* E = D->scalarMultiply(s);
+    D->print("D");
+    E->print("E");
 
     cout << "\n# Transposition of a random matrix\n";
-    SparseMatrix F = SparseMatrix::createRandomMatrix(n);
-    SparseMatrix G = F.transpose();
-    F.print("F");
-    G.print("G");
+    SparseMatrix* F = SparseMatrix::createRandomMatrix(n);
+    SparseMatrix* G = F->transpose();
+    F->print("F");
+    G->print("G");
+
+    delete A;
+    delete B;
+    delete C;
+    delete D;
+    delete E;
+    delete F;
+    delete G;
 
     return 0;
 }

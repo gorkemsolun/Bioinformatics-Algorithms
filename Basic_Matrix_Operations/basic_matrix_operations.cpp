@@ -79,14 +79,12 @@ public:
     }
 
     SparseMatrix* add(SparseMatrix* B) {
-        if (!B->head) {
-            return this;
-        }
-        if (!head) {
-            return B;
-        }
         // Sum of two sparse matrices A and B
         SparseMatrix* sumC = new SparseMatrix(size);
+
+        if (!B->head || !head) {
+            return sumC;
+        }
 
         Node* a = head, * b = B->head;
         // Both lists are non-empty and sorted
@@ -112,11 +110,10 @@ public:
     }
 
     SparseMatrix* scalarMultiply(int scalar) {
-        if (scalar == 0 || !head) {
-            SparseMatrix* zeroMatrix = new SparseMatrix(size);
-            return zeroMatrix;
-        }
         SparseMatrix* C = new SparseMatrix(size);
+        if (scalar == 0 || !head) {
+            return C;
+        }
 
         Node* a = head;
         do {
@@ -128,11 +125,11 @@ public:
     }
 
     SparseMatrix* transpose() {
-        if (!head) {
-            SparseMatrix* zeroMatrix = new SparseMatrix(size);
-            return zeroMatrix;
-        }
         SparseMatrix* T = new SparseMatrix(size);
+
+        if (!head) {
+            return T;
+        }
 
         Node* a = head;
         do {

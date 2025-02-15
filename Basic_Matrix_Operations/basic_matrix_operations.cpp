@@ -72,7 +72,7 @@ public:
         SparseMatrix* matrix = new SparseMatrix(n);
         for (int i = 0; i < n; ++i) {
             for (int j = 0; j < n; ++j) {
-                matrix->insert(i, j, rand() % 100);
+                matrix->insert(i, j, rand() % 1000);
             }
         }
         return matrix;
@@ -194,17 +194,17 @@ int main(int argc, char* argv[]) {
     B->print("B");
     C->print("C");
 
-    cout << "\n# Scalar multiplication of " << n << "x" << n << " matrix by " << s << "\n";
+    cout << "\n# Scalar multiplication of " << n << "x" << n << " matrix by " << s << "\n" << "s: " << s << "\n";
     SparseMatrix* D = SparseMatrix::createRandomMatrix(n);
     SparseMatrix* E = D->scalarMultiply(s);
-    D->print("D");
-    E->print("E");
+    D->print("A");
+    E->print("C");
 
     cout << "\n# Transposition of a random matrix\n";
     SparseMatrix* F = SparseMatrix::createRandomMatrix(n);
     SparseMatrix* G = F->transpose();
-    F->print("F");
-    G->print("G");
+    F->print("A");
+    G->print("A.T");
 
     delete A;
     delete B;

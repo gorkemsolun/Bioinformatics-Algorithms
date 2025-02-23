@@ -28,9 +28,9 @@ public:
     }
 
     // Insert a pattern into the trie.
-    void addPattern(const string& pat, int index) {
+    void addPattern(const string& pattern, int index) {
         ACNode* node = root;
-        for (char c : pat) {
+        for (char c : pattern) {
             if (node->children.find(c) == node->children.end())
                 node->children[c] = new ACNode();
             node = node->children[c];
@@ -42,22 +42,22 @@ public:
     void buildAutomaton() {
         queue<ACNode*> q;
         // For each child of the root, set failure link to root.
-        for (auto& p : root->children) {
-            p.second->failure = root;
-            q.push(p.second);
+        for (auto& parent : root->children) {
+            parent.second->failure = root;
+            q.push(parent.second);
         }
         while (!q.empty()) {
             ACNode* curr = q.front();
             q.pop();
-            for (auto& p : curr->children) {
-                char c = p.first;
-                ACNode* child = p.second;
-                ACNode* f = curr->failure;
-                while (f && f->children.find(c) == f->children.end()) {
-                    f = f->failure;
+            for (auto& parent : curr->children) {
+                char c = parent.first;
+                ACNode* child = parent.second;
+                ACNode* failure = curr->failure;
+                while (failure && failure->children.find(c) == failure->children.end()) {
+                    failure = failure->failure;
                 }
-                child->failure = (f ? f->children[c] : root);
-                // Propagate output from failure link.
+                child->failure = (failure ? failure->children[c] : root);
+                // Propagate patterns ending here from failure link.
                 child->patterns_ending_here.insert(child->patterns_ending_here.end(),
                     child->failure->patterns_ending_here.begin(),
                     child->failure->patterns_ending_here.end());
@@ -82,10 +82,10 @@ public:
                 continue;
             }
             node = node->children[c];
-            for (int patIndex : node->patterns_ending_here) {
+            for (int patternIndex : node->patterns_ending_here) {
                 // Report the starting global position.
-                int pos = i - patterns[patIndex].size() + 1;
-                matches[patIndex].push_back(pos);
+                int pos = i - patterns[patternIndex].size() + 1;
+                matches[patternIndex].push_back(pos);
             }
         }
         return matches;
@@ -93,8 +93,8 @@ public:
 
     // Free nodes recursively.
     void freeNode(ACNode* node) {
-        for (auto& p : node->children) {
-            freeNode(p.second);
+        for (auto& parent : node->children) {
+            freeNode(parent.second);
         }
         delete node;
     }
@@ -380,22 +380,22 @@ int main(int argc, char* argv[]) {
             }
             outFile << entry.first << ":";
             for (int j = 0; j < entry.second.size(); j++) {
-                outFile << entry.second[j];
-                if (j < entry.second.size() - 1) {
-                    outFile << ",";
+                for (int i = 0; i < pats.size(); i++) {
+                    if (j < entry.second.size() - 1) {
+                        outFile << ",";
+                    }
                 }
+                firstRef = false;
             }
-            firstRef = false;
+            outFile << endl;
         }
-        outFile << endl;
-    }
-    outFile.close();
+        outFile.close();
 
-    // If -d is specified, build the suffix tree for the global text and output its DOT file.
-    if (dotFlag) {
-        SuffixTree st(globalText);
-        st.outputDot(outPrefix + ".dot");
-    }
+        // If -d is specified, build the suffix tree for the global text and output its DOT file.
+        if (dotFlag) {
+            SuffixTree st(globalText);
+            st.outputDot(outPrefix + ".dot");
+        }
 
-    return 0;
-}
+        return 0;
+    }

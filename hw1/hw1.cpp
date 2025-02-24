@@ -1,308 +1,252 @@
+/*
+ * main.cpp
+ *
+ * A complete solution for the multiple pattern matching assignment.
+ * This implementation builds a single suffix tree that holds all reference sequences
+ * (each separated by a unique terminator) and then searches for each pattern.
+ *
+ * Command-line arguments:
+ *   -r <reference_fasta> : FASTA file with reference sequences.
+ *   -p <pattern_fasta>   : FASTA file with patterns.
+ *   -o <output_prefix>   : The prefix for output files (a .txt file is always produced,
+ *                          and if -d is specified, a DOT file is produced).
+ *   -d                   : Optional; if provided, outputs the suffix tree in DOT format.
+ *
+ * The implementation uses Ukkonen's algorithm for suffix tree construction.
+ * It reports pattern occurrences per reference (using 1-indexed positions).
+ */
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <vector>
-#include <queue>
-#include <unordered_map>
-#include <cstdlib>
+#include <map>
 #include <string>
 #include <algorithm>
-
+#include <functional>
+#include <tuple>
 using namespace std;
 
-// Node for the Aho–Corasick trie.
-struct ACNode {
-    unordered_map<char, ACNode*> children;
-    ACNode* failure;
-    vector<int> patterns_ending_here;
-    ACNode() : failure(nullptr) {}
-};
+struct SuffixTreeNode {
+    // Each edge is stored in a map from character to child node.
+    map<char, SuffixTreeNode*> children;
+    SuffixTreeNode* suffixLink;
+    int start;
+    int* end; // For leaves, all share the same end pointer (leafEnd)
+    int suffixIndex; // For leaves, stores starting index in the global text; for internal nodes, -1.
 
-class AhoCorasick {
-public:
-    ACNode* root;
-    vector<string> patterns; // store patterns by index
-
-    AhoCorasick() {
-        root = new ACNode();
-    }
-
-    // Insert a pattern into the trie.
-    void addPattern(const string& pattern, int index) {
-        ACNode* node = root;
-        for (char c : pattern) {
-            if (node->children.find(c) == node->children.end())
-                node->children[c] = new ACNode();
-            node = node->children[c];
-        }
-        node->patterns_ending_here.push_back(index);
-    }
-
-    // Build failure links using BFS.
-    void buildAutomaton() {
-        queue<ACNode*> q;
-        // For each child of the root, set failure link to root.
-        for (auto& parent : root->children) {
-            parent.second->failure = root;
-            q.push(parent.second);
-        }
-        while (!q.empty()) {
-            ACNode* curr = q.front();
-            q.pop();
-            for (auto& parent : curr->children) {
-                char c = parent.first;
-                ACNode* child = parent.second;
-                ACNode* failure = curr->failure;
-                while (failure && failure->children.find(c) == failure->children.end()) {
-                    failure = failure->failure;
-                }
-                child->failure = (failure ? failure->children[c] : root);
-                // Propagate patterns ending here from failure link.
-                child->patterns_ending_here.insert(child->patterns_ending_here.end(),
-                    child->failure->patterns_ending_here.begin(),
-                    child->failure->patterns_ending_here.end());
-                q.push(child);
-            }
-        }
-    }
-
-    // Search the given text (which in our case is the global concatenated references)
-    // Returns, for each pattern, a vector of global (0-indexed) match positions.
-    vector<vector<int>> search(const string& text) {
-        vector<vector<int>> matches(patterns.size());
-        ACNode* node = root;
-        for (int i = 0; i < text.size(); i++) {
-            char c = text[i];
-            // Follow failure links if there is no edge for c.
-            while (node && node->children.find(c) == node->children.end()) {
-                node = node->failure;
-            }
-            if (!node) {
-                node = root;
-                continue;
-            }
-            node = node->children[c];
-            for (int patternIndex : node->patterns_ending_here) {
-                // Report the starting global position.
-                int pos = i - patterns[patternIndex].size() + 1;
-                matches[patternIndex].push_back(pos);
-            }
-        }
-        return matches;
-    }
-
-    // Free nodes recursively.
-    void freeNode(ACNode* node) {
-        for (auto& parent : node->children) {
-            freeNode(parent.second);
-        }
-        delete node;
-    }
-
-    ~AhoCorasick() {
-        freeNode(root);
+    SuffixTreeNode(int start, int* end)
+        : suffixLink(nullptr), start(start), end(end), suffixIndex(-1) {
     }
 };
-
-struct FastaSequence {
-    string name;
-    string sequence;
-};
-
-vector<FastaSequence> readFastaSequences(const string& filename) {
-    vector<FastaSequence> refs;
-    ifstream infile(filename);
-    if (!infile) {
-        cerr << "Error opening reference file: " << filename << endl;
-        exit(1);
-    }
-
-    string line;
-    FastaSequence current;
-    bool inSequence = false;
-    while (getline(infile, line)) {
-        if (line.empty()) {
-            continue;
-        }
-
-        if (line[0] == '>') {
-            if (inSequence) {
-                refs.push_back(current);
-                current = FastaSequence();
-            }
-            current.name = line.substr(1);
-            current.sequence = "";
-            inSequence = true;
-        } else {
-            current.sequence += line;
-        }
-    }
-
-    if (inSequence) {
-        refs.push_back(current);
-    }
-
-    infile.close();
-    return refs;
-}
-
-// This structure records where each reference’s sequence appears in the global text.
-struct ReferenceBoundary {
-    string name;
-    int start; // global starting index (0-indexed) of the sequence
-    int end;   // global ending index (inclusive) of the sequence (i.e. before the delimiter)
-};
-
-// Each node in the suffix tree.
-struct STNode {
-    // Children map: key is the first character of the edge.
-    unordered_map<char, STNode*> children;
-    // The edge label is represented by [start, *end] indices into the text.
-    int start, * end;
-    // For leaves, store the starting index (global position) of the corresponding suffix.
-    vector<int> suffixIndices;
-    // Node ID (for DOT output).
-    int id;
-    STNode(int start, int* end, int id) : start(start), end(end), id(id) {}
-};
-
-int globalNodeId = 0;
 
 class SuffixTree {
 public:
-    string text;
-    STNode* root;
+    string text;       // The combined text (all references concatenated with unique terminators)
+    SuffixTreeNode* root;
+    SuffixTreeNode* lastNewNode;
+    SuffixTreeNode* activeNode;
+    int activeEdge;
+    int activeLength;
+    int remainingSuffixCount;
+    int leafEnd;       // Global end for all leaves (updated in each phase)
+    int* rootEnd;
+    int* splitEnd;
+    int size;          // Length of text
 
-    SuffixTree(const string& text) : text(text) {
-        root = new STNode(-1, new int(-1), globalNodeId++);
-        build();
+    SuffixTree(const string& text) : text(text), root(nullptr), lastNewNode(nullptr),
+        activeEdge(-1), activeLength(0), remainingSuffixCount(0), leafEnd(-1), rootEnd(nullptr), splitEnd(nullptr) {
+        size = text.size();
+        // Create root node with start = -1 and end = nullptr.
+        root = new SuffixTreeNode(-1, new int(-1));
+        activeNode = root;
     }
 
     ~SuffixTree() {
-        freeNode(root);
+        freeTree(root);
+        if (rootEnd) delete rootEnd;
     }
 
-    // Naively insert every suffix.
+    // Main build function: iteratively add each character.
     void build() {
-        int n = text.size();
-        for (int i = 0; i < n; i++) {
-            insertSuffix(i);
+        for (int i = 0; i < size; i++) {
+            extendSuffixTree(i);
         }
-        // Compress the tree by merging nonbranching nodes.
-        compress(root);
     }
 
-    void insertSuffix(int index) {
-        STNode* current = root;
-        int n = text.size();
-        int i = index;
-        while (i < n) {
-            char c = text[i];
-            if (current->children.find(c) == current->children.end()) {
-                int* leafEnd = new int(n - 1);
-                STNode* leaf = new STNode(i, leafEnd, globalNodeId++);
-                leaf->suffixIndices.push_back(index);
-                current->children[c] = leaf;
-                return;
-            } else {
-                STNode* child = current->children[c];
-                int edgeStart = child->start;
-                int edgeEnd = *(child->end);
-                int j = edgeStart;
-                while (j <= edgeEnd && i < n && text[j] == text[i]) {
-                    j++; i++;
+    // Ukkonen extension for phase pos.
+    void extendSuffixTree(int pos) {
+        leafEnd = pos;
+        remainingSuffixCount++;
+        lastNewNode = nullptr;
+
+        while (remainingSuffixCount > 0) {
+            if (activeLength == 0)
+                activeEdge = pos; // current character index
+
+            char curChar = text[activeEdge];
+            // If there is no outgoing edge starting with curChar from activeNode
+            if (activeNode->children.find(curChar) == activeNode->children.end()) {
+                // Create a new leaf edge
+                activeNode->children[curChar] = new SuffixTreeNode(pos, &leafEnd);
+
+                // Add suffix link from last created internal node (if any)
+                if (lastNewNode != nullptr) {
+                    lastNewNode->suffixLink = activeNode;
+                    lastNewNode = nullptr;
                 }
-                if (j > edgeEnd) {
-                    current = child;
+            } else {
+                // There is an outgoing edge starting with curChar.
+                SuffixTreeNode* next = activeNode->children[curChar];
+                int edgeLen = edgeLength(next);
+                if (activeLength >= edgeLen) {
+                    activeEdge += edgeLen;
+                    activeLength -= edgeLen;
+                    activeNode = next;
                     continue;
                 }
-                // Mismatch: split the edge.
-                int* splitEnd = new int(j - 1);
-                STNode* split = new STNode(child->start, splitEnd, globalNodeId++);
-                current->children[c] = split;
-                child->start = j;
-                split->children[text[j]] = child;
-                int* leafEnd = new int(n - 1);
-                STNode* leaf = new STNode(i, leafEnd, globalNodeId++);
-                leaf->suffixIndices.push_back(index);
-                split->children[text[i]] = leaf;
-                return;
+                // Check if the current character on the edge is equal to text[pos]
+                if (text[next->start + activeLength] == text[pos]) {
+                    if (lastNewNode != nullptr && activeNode != root) {
+                        lastNewNode->suffixLink = activeNode;
+                        lastNewNode = nullptr;
+                    }
+                    activeLength++;
+                    break;
+                }
+                // Need to split the edge
+                splitEnd = new int;
+                *splitEnd = next->start + activeLength - 1;
+                SuffixTreeNode* split = new SuffixTreeNode(next->start, splitEnd);
+                activeNode->children[curChar] = split;
+                // New leaf for current character
+                split->children[text[pos]] = new SuffixTreeNode(pos, &leafEnd);
+                next->start += activeLength;
+                split->children[text[next->start]] = next;
+
+                if (lastNewNode != nullptr)
+                    lastNewNode->suffixLink = split;
+                lastNewNode = split;
+            }
+            remainingSuffixCount--;
+            if (activeNode == root && activeLength > 0) {
+                activeLength--;
+                activeEdge = pos - remainingSuffixCount + 1;
+            } else if (activeNode != root) {
+                activeNode = (activeNode->suffixLink != nullptr) ? activeNode->suffixLink : root;
             }
         }
     }
 
-    // Recursively compress the tree by merging nodes with a single child.
-    void compress(STNode* node) {
+    // Return the length of the edge (for a given node)
+    int edgeLength(SuffixTreeNode* node) {
+        return *(node->end) - node->start + 1;
+    }
+
+    // After tree construction, set suffixIndex for leaves using DFS.
+    void setSuffixIndexByDFS(SuffixTreeNode* node, int labelHeight) {
+        if (node == nullptr) return;
+        bool leaf = true;
         for (auto& childPair : node->children) {
-            STNode* child = childPair.second;
-            compress(child);
-            // Merge if the child is non–leaf and has exactly one child.
-            while (child->children.size() == 1) {
-                auto it = child->children.begin();
-                STNode* grandchild = it->second;
-                // Extend child's edge label to include the grandchild’s edge.
-                child->end = grandchild->end;
-                // Merge children.
-                child->children = grandchild->children;
-                child->suffixIndices.insert(child->suffixIndices.end(),
-                    grandchild->suffixIndices.begin(),
-                    grandchild->suffixIndices.end());
+            leaf = false;
+            setSuffixIndexByDFS(childPair.second, labelHeight + edgeLength(childPair.second));
+        }
+        if (leaf) {
+            node->suffixIndex = size - labelHeight;
+        }
+    }
+
+    // Search for occurrences of a pattern in the suffix tree.
+    // Returns a vector of global starting indices (in text) where the pattern occurs.
+    vector<int> search(const string& pattern) {
+        vector<int> result;
+        SuffixTreeNode* current = root;
+        int i = 0;
+        while (i < pattern.size()) {
+            if (current->children.find(pattern[i]) != current->children.end()) {
+                SuffixTreeNode* edge = current->children[pattern[i]];
+                int edgeLen = edgeLength(edge);
+                int j = 0;
+                while (j < edgeLen && i < pattern.size() && text[edge->start + j] == pattern[i]) {
+                    i++; j++;
+                }
+                if (j == edgeLen)
+                    current = edge;
+                else {
+                    if (i == pattern.size())
+                        collectLeafIndices(edge, result);
+                    return result; // mismatch: pattern not found
+                }
+            } else {
+                return result; // pattern not found
             }
         }
+        // Pattern completely matched; now collect all leaf indices below current node.
+        collectLeafIndices(current, result);
+        return result;
     }
 
-    // Output the suffix tree in DOT language.
-    void outputDot(const string& filename) {
-        ofstream out(filename);
-        out << "digraph suffix_tree {" << endl;
-        outputNodeDot(root, out);
-        out << "}" << endl;
-        out.close();
+    // Print the suffix tree in DOT format (for visualization).
+    void printDot(const string& filename) {
+        ofstream dotFile(filename);
+        dotFile << "digraph suffix_tree {\n";
+        // Assign unique integer ids to nodes via DFS.
+        map<SuffixTreeNode*, int> nodeId;
+        int idCounter = 0;
+        function<void(SuffixTreeNode*)> dfs = [&](SuffixTreeNode* node) {
+            int curId = idCounter++;
+            nodeId[node] = curId;
+            string label = "";
+            if (node->suffixIndex != -1)
+                label = to_string(node->suffixIndex);
+            dotFile << "node" << curId << " [label=\"" << label << "\"];\n";
+            for (auto& childPair : node->children) {
+                SuffixTreeNode* child = childPair.second;
+                dfs(child);
+                int childId = nodeId[child];
+                string edgeLabel = text.substr(child->start, *(child->end) - child->start + 1);
+                dotFile << "node" << curId << " -> node" << childId << " [label=\"" << edgeLabel << "\"];\n";
+            }
+            };
+        dfs(root);
+        dotFile << "}\n";
+        dotFile.close();
     }
 
-    void outputNodeDot(STNode* node, ofstream& out) {
-        if (node == root) {
-            out << "node_" << node->id << " [label=\"\"];" << endl;
-        } else {
-            string label = text.substr(node->start, *(node->end) - node->start + 1);
-            out << "node_" << node->id << " [label=\"" << label << "\"];" << endl;
-        }
+private:
+    // Helper: recursively free nodes.
+    void freeTree(SuffixTreeNode* node) {
+        if (node == nullptr) return;
         for (auto& childPair : node->children) {
-            STNode* child = childPair.second;
-            string edgeLabel = text.substr(child->start, *(child->end) - child->start + 1);
-            out << "node_" << node->id << " -> node_" << child->id
-                << " [label=\"" << edgeLabel << "\"];" << endl;
-            outputNodeDot(child, out);
+            freeTree(childPair.second);
         }
-    }
-
-    // Free nodes recursively.
-    void freeNode(STNode* node) {
-        for (auto& child : node->children) {
-            freeNode(child.second);
-        }
-        if (node->end) { delete node->end; }
+        // Only delete end pointer if it was allocated (i.e. not pointing to leafEnd)
+        if (node->end != &leafEnd)
+            delete node->end;
         delete node;
+    }
+
+    // Helper: collect suffix indices from all leaves in the subtree rooted at node.
+    void collectLeafIndices(SuffixTreeNode* node, vector<int>& result) {
+        if (node == nullptr) return;
+        if (node->suffixIndex != -1) {
+            result.push_back(node->suffixIndex);
+            return;
+        }
+        for (auto& childPair : node->children)
+            collectLeafIndices(childPair.second, result);
     }
 };
 
-// Given a global position and pattern length, determine in which reference (if any)
-// the entire pattern lies. Returns a pair of (reference name, local position [1-indexed]).
-pair<string, int> getReferenceForPosition(int pos, int patLen, const vector<ReferenceBoundary>& boundaries) {
-    for (const auto& b : boundaries) {
-        if (pos >= b.start && pos + patLen - 1 <= b.end) {
-            int localPos = pos - b.start + 1;
-            return make_pair(b.name, localPos);
-        }
-    }
-    return make_pair("", -1);
-}
-
-int main(int argc, char* argv[]) {
+//
+// Main function: parses command-line arguments, reads input FASTA files, builds the suffix tree,
+// searches for each pattern, and writes output files.
+//
+int main(int argc, char** argv) {
     string refFile, patFile, outPrefix;
     bool dotFlag = false;
 
-    // Simple command–line argument parsing.
+    // Simple argument parsing
     for (int i = 1; i < argc; i++) {
         string arg = argv[i];
         if (arg == "-r" && i + 1 < argc) {
@@ -315,87 +259,152 @@ int main(int argc, char* argv[]) {
             dotFlag = true;
         }
     }
-
     if (refFile.empty() || patFile.empty() || outPrefix.empty()) {
-        cerr << "Usage: " << argv[0]
-            << " -r <reference file> -p <pattern file> -o <output prefix> [-d]" << endl;
+        cerr << "Usage: " << argv[0] << " -r <reference.fasta> -p <patterns.fasta> -o <output_prefix> [-d]" << endl;
         return 1;
     }
 
-    // Read references and patterns.
-    vector<FastaSequence> refs = readFastaSequences(refFile);
-    vector<FastaSequence> pats = readFastaSequences(patFile);
-
-    // Build a global text by concatenating all references.
-    // For each reference, record its global boundary.
-    // We use '#' as a delimiter (assuming it does not appear in any sequence).
-    string globalText = "";
-    vector<ReferenceBoundary> boundaries;
-    for (auto& r : refs) {
-        ReferenceBoundary rb;
-        rb.name = r.name;
-        rb.start = globalText.size();
-        globalText += r.sequence;
-        rb.end = globalText.size() - 1; // last index of the sequence
-
-        globalText.push_back('#');// Append the delimiter.
-        boundaries.push_back(rb);
+    // Read the reference FASTA file (multi-line sequences)
+    vector<pair<string, string>> references; // pair: header, sequence
+    ifstream refIn(refFile);
+    if (!refIn) {
+        cerr << "Cannot open reference file: " << refFile << endl;
+        return 1;
     }
-    // globalText now contains all reference sequences separated by '#' characters
-
-    // Build the Aho–Corasick automaton using the patterns.
-    AhoCorasick ac;
-    for (int i = 0; i < pats.size(); i++) {
-        ac.patterns.push_back(pats[i].sequence);
-        ac.addPattern(pats[i].sequence, i);
-    }
-    ac.buildAutomaton();
-
-    // Search the global text.
-    vector<vector<int>> globalMatches = ac.search(globalText);
-
-    // Map matches back to their reference (and convert to local positions, 1-indexed).
-    // For each pattern, we record a mapping: reference name -> vector of local positions.
-    vector<unordered_map<string, vector<int>>> patternMatches(pats.size());
-    for (int patIndex = 0; patIndex < globalMatches.size(); patIndex++) {
-        int patLen = ac.patterns[patIndex].size();
-        for (int pos : globalMatches[patIndex]) {
-            pair<string, int> refInfo = getReferenceForPosition(pos, patLen, boundaries);
-            if (refInfo.first != "") {
-                patternMatches[patIndex][refInfo.first].push_back(refInfo.second);
+    string line, header, seq;
+    while (getline(refIn, line)) {
+        if (line.empty())
+            continue;
+        if (line[0] == '>') {
+            if (!header.empty()) {
+                references.push_back({ header, seq });
+                seq = "";
             }
+            header = line.substr(1); // drop the '>' character
+        } else {
+            seq += line;
         }
     }
+    if (!header.empty())
+        references.push_back({ header, seq });
+    refIn.close();
 
-    // Write the output file (<outPrefix>.txt).
-    // Each line is in the format:
-    // (patternHeader) - ref1:pos1,pos2, ... , ref2:pos1, ...
+    // Read the patterns FASTA file (assume header then pattern on next line)
+    vector<pair<string, string>> patterns;
+    ifstream patIn(patFile);
+    if (!patIn) {
+        cerr << "Cannot open patterns file: " << patFile << endl;
+        return 1;
+    }
+    header = "";
+    string pat;
+    bool headerFlag = false;
+    while (getline(patIn, line)) {
+        if (line.empty()) continue;
+        if (line[0] == '>') {
+            header = line.substr(1);
+            headerFlag = true;
+        } else if (headerFlag) {
+            pat = line;
+            patterns.push_back({ header, pat });
+            headerFlag = false;
+        }
+    }
+    patIn.close();
+
+    // Build a combined text from all reference sequences.
+    // Use a unique terminator for each reference (alphabet is {A,C,G,T} so any other char is safe).
+    string combinedText = "";
+    vector<tuple<int, int, string>> refBoundaries; // (start index, end index, header)
+    vector<int> refStartIndices;
+    int numRefs = references.size();
+    vector<char> terminators;
+    // Use a set of available unique terminators.
+    string available = "$#@%^&!";
+    if (numRefs > available.size()) {
+        // If more references than available symbols, generate symbols from printable ASCII excluding A, C, G, T.
+        for (char c = 33; c < 127 && terminators.size() < numRefs; c++) {
+            if (c != 'A' && c != 'C' && c != 'G' && c != 'T')
+                terminators.push_back(c);
+        }
+    } else {
+        for (int i = 0; i < numRefs; i++) {
+            terminators.push_back(available[i]);
+        }
+    }
+    for (int i = 0; i < numRefs; i++) {
+        int startIndex = combinedText.size();
+        combinedText += references[i].second;
+        int seqLen = references[i].second.size();
+        // Append a unique terminator.
+        combinedText.push_back(terminators[i]);
+        int endIndex = combinedText.size() - 1; // includes terminator
+        refBoundaries.push_back(make_tuple(startIndex, endIndex, references[i].first));
+        refStartIndices.push_back(startIndex);
+    }
+
+    // Build the suffix tree from the combined text.
+    SuffixTree st(combinedText);
+    st.build();
+    st.setSuffixIndexByDFS(st.root, 0);
+
+    // A helper lambda to map a global index in combinedText to a reference header and a 1-indexed position.
+    auto mapIndexToRef = [&](int idx) -> pair<string, int> {
+        for (int i = 0; i < refBoundaries.size(); i++) {
+            int start, end;
+            string refHeader;
+            tie(start, end, refHeader) = refBoundaries[i];
+            int refLen = end - start; // terminator is at the end
+            if (idx >= start && idx < start + refLen) {
+                return { refHeader, idx - start + 1 };
+            }
+        }
+        return { "", -1 };
+        };
+
+    // Open the output file for writing pattern occurrences.
     ofstream outFile(outPrefix + ".txt");
-    for (int i = 0; i < pats.size(); i++) {
-        outFile << "(" << pats[i].name << ") - ";
-        bool firstRef = true;
-        for (auto& entry : patternMatches[i]) {
-            if (!firstRef) {
-                outFile << ", ";
-            }
-            outFile << entry.first << ":";
-            for (int j = 0; j < entry.second.size(); j++) {
-                for (int i = 0; i < pats.size(); i++) {
-                    if (j < entry.second.size() - 1) {
-                        outFile << ",";
-                    }
-                }
-                firstRef = false;
-            }
-            outFile << endl;
-        }
-        outFile.close();
-
-        // If -d is specified, build the suffix tree for the global text and output its DOT file.
-        if (dotFlag) {
-            SuffixTree st(globalText);
-            st.outputDot(outPrefix + ".dot");
-        }
-
-        return 0;
+    if (!outFile) {
+        cerr << "Cannot open output file: " << outPrefix + ".txt" << endl;
+        return 1;
     }
+
+    // For each pattern, search in the suffix tree and group the results by reference.
+    for (auto& p : patterns) {
+        string patHeader = p.first;
+        string patSeq = p.second;
+        vector<int> occ = st.search(patSeq);
+        // Group occurrences by reference header.
+        map<string, vector<int>> occMap;
+        for (int pos : occ) {
+            auto info = mapIndexToRef(pos);
+            if (info.first != "")
+                occMap[info.first].push_back(info.second);
+        }
+        for (auto& entry : occMap)
+            sort(entry.second.begin(), entry.second.end());
+
+        outFile << "(" << patHeader << ") - ";
+        bool firstRef = true;
+        for (auto& entry : occMap) {
+            if (!firstRef)
+                outFile << ", ";
+            firstRef = false;
+            outFile << entry.first << ":";
+            for (size_t i = 0; i < entry.second.size(); i++) {
+                if (i > 0)
+                    outFile << ",";
+                outFile << entry.second[i];
+            }
+        }
+        outFile << "\n";
+    }
+    outFile.close();
+
+    // If the -d switch was provided, output the DOT file for the suffix tree.
+    if (dotFlag) {
+        st.printDot(outPrefix + ".dot");
+    }
+
+    return 0;
+}

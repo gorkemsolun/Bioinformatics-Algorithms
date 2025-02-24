@@ -3,3 +3,5 @@ Cekme
 *.o
 *.out
 *.exe
+*.png
+*.svg

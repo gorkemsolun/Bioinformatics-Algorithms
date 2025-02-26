@@ -43,7 +43,7 @@ struct SuffixTreeNode {
 class SuffixTree {
 public:
     string text;       // The combined text (all references concatenated with unique terminators)
-    vector<tuple<int, int, string>> referenceBoundaries; // each tuple = (startIndexInConcatenated, endIndexInConcatenated, refName)
+    vector<tuple<int, int, string>> referenceBoundaries; // each tuple = (startIndexInConcatenated, endIndexInConcatenated, referenceName)
 
     SuffixTreeNode* root;
     SuffixTreeNode* lastNewNode;
@@ -69,7 +69,7 @@ public:
 
     // Iteratively add each character
     void build() {
-        for (int i = 0; i < text.size(); ++i) {
+        for (int i = 0; i < (int) text.size(); ++i) {
             extendSuffixTree(i);
         }
     }
@@ -163,18 +163,18 @@ public:
         vector<int> result;
         SuffixTreeNode* current = root;
         int i = 0;
-        while (i < pattern.size()) {
+        while (i < (int) pattern.size()) {
             if (current->children.find(pattern[i]) != current->children.end()) {
                 SuffixTreeNode* edge = current->children[pattern[i]];
                 int edgeLen = edgeLength(edge);
                 int j = 0;
-                while (j < edgeLen && i < pattern.size() && text[edge->start + j] == pattern[i]) {
+                while (j < edgeLen && i < (int) pattern.size() && text[edge->start + j] == pattern[i]) {
                     ++i; ++j;
                 }
                 if (j == edgeLen) {
                     current = edge;
                 } else {
-                    if (i == pattern.size()) {
+                    if (i == (int) pattern.size()) {
                         collectLeafIndices(edge, result);
                     }
                     return result; // mismatch: pattern not found
@@ -188,12 +188,11 @@ public:
         return result;
     }
 
-    // Helper that maps a global index to(refName, localPos, globalIndex)
+    // Helper that maps a global index to(referenceName, localPosition, globalIndex)
     // If not found, returns ("", -1, -1).
     tuple<string, int, int> mapIndexToRef(int globalIdx) const {
         for (auto& rb : referenceBoundaries) {
-            int start = get<0>(rb);
-            int end = get<1>(rb);
+            int start = get<0>(rb), end = get<1>(rb);
             string name = get<2>(rb);
             // end - start is the length (minus the terminator)
             // But be consistent with how you stored boundaries.
@@ -220,10 +219,12 @@ public:
             string label = "";
             if (node->suffixIndex != -1) {
                 // It's a leaf
-                auto [refName, localPos, globalPos] = mapIndexToRef(node->suffixIndex);
-                if (!refName.empty() && localPos != -1) {
+                string referenceName;
+                int localPosition, globalPosition;
+                tie(referenceName, localPosition, globalPosition) = mapIndexToRef(node->suffixIndex);
+                if (!referenceName.empty() && localPosition != -1) {
                     // e.g. "chr2:5:10"
-                    label = refName + ":" + to_string(localPos) + ":" + to_string(globalPos);
+                    label = referenceName + ":" + to_string(localPosition) + ":" + to_string(globalPosition);
                 } else {
                     // fallback if not found
                     label = to_string(node->suffixIndex);
@@ -351,15 +352,14 @@ int main(int argc, char** argv) {
             }
         }
     } else {
-        for (int i = 0; i < references->size(); ++i) {
+        for (int i = 0; i < (int) references->size(); ++i) {
             terminators.push_back(available[i]);
         }
     }
 
-    for (int i = 0; i < references->size(); ++i) {
+    for (int i = 0; i < (int) references->size(); ++i) {
         int startIndex = combinedText.size();
         combinedText += (*references)[i].second;
-        int seqLen = (*references)[i].second.size();
         // Append a unique terminator.
         combinedText.push_back(terminators[i]);
         int endIndex = combinedText.size() - 1; // includes terminator
@@ -374,7 +374,7 @@ int main(int argc, char** argv) {
 
     // A helper lambda to map a global index in combinedText to a reference header and a 1-indexed position.
     auto mapIndexToRef = [&](int idx) -> pair<string, int> {
-        for (int i = 0; i < referenceBoundaries.size(); ++i) {
+        for (int i = 0; i < (int) referenceBoundaries.size(); ++i) {
             int start, end;
             string refHeader;
             tie(start, end, refHeader) = referenceBoundaries[i];

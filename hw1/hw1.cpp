@@ -1,5 +1,5 @@
 /*
- * main.cpp
+ * Görkem Kadir Solun
  *
  * A complete solution for the multiple pattern matching assignment.
  * This implementation builds a single suffix tree that holds all reference sequences
@@ -43,6 +43,8 @@ struct SuffixTreeNode {
 class SuffixTree {
 public:
     string text;       // The combined text (all references concatenated with unique terminators)
+    vector<tuple<int, int, string>> refBoundaries; // each tuple = (startIndexInConcatenated, endIndexInConcatenated, refName)
+
     SuffixTreeNode* root;
     SuffixTreeNode* lastNewNode;
     SuffixTreeNode* activeNode;
@@ -54,9 +56,8 @@ public:
     int* splitEnd;
     int size;          // Length of text
 
-    SuffixTree(const string& text) : text(text), root(nullptr), lastNewNode(nullptr),
-        activeEdge(-1), activeLength(0), remainingSuffixCount(0), leafEnd(-1), rootEnd(nullptr), splitEnd(nullptr) {
-        size = text.size();
+    SuffixTree(const string& text, const vector<tuple<int, int, string>>& boundaries) : text(text), refBoundaries(boundaries), root(nullptr), lastNewNode(nullptr), activeNode(nullptr),
+        activeEdge(-1), activeLength(0), remainingSuffixCount(0), leafEnd(-1), rootEnd(nullptr), splitEnd(nullptr), size(text.size()) {
         // Create root node with start = -1 and end = nullptr.
         root = new SuffixTreeNode(-1, new int(-1));
         activeNode = root;
@@ -64,7 +65,7 @@ public:
 
     ~SuffixTree() {
         freeTree(root);
-        if (rootEnd) delete rootEnd;
+        if (rootEnd) { delete rootEnd; }
     }
 
     // Main build function: iteratively add each character.
@@ -81,8 +82,9 @@ public:
         lastNewNode = nullptr;
 
         while (remainingSuffixCount > 0) {
-            if (activeLength == 0)
+            if (activeLength == 0) {
                 activeEdge = pos; // current character index
+            }
 
             char curChar = text[activeEdge];
             // If there is no outgoing edge starting with curChar from activeNode
@@ -115,8 +117,7 @@ public:
                     break;
                 }
                 // Need to split the edge
-                splitEnd = new int;
-                *splitEnd = next->start + activeLength - 1;
+                splitEnd = new int(next->start + activeLength - 1);
                 SuffixTreeNode* split = new SuffixTreeNode(next->start, splitEnd);
                 activeNode->children[curChar] = split;
                 // New leaf for current character
@@ -124,8 +125,9 @@ public:
                 next->start += activeLength;
                 split->children[text[next->start]] = next;
 
-                if (lastNewNode != nullptr)
+                if (lastNewNode != nullptr) {
                     lastNewNode->suffixLink = split;
+                }
                 lastNewNode = split;
             }
             remainingSuffixCount--;
@@ -170,11 +172,12 @@ public:
                 while (j < edgeLen && i < pattern.size() && text[edge->start + j] == pattern[i]) {
                     i++; j++;
                 }
-                if (j == edgeLen)
+                if (j == edgeLen) {
                     current = edge;
-                else {
-                    if (i == pattern.size())
+                } else {
+                    if (i == pattern.size()) {
                         collectLeafIndices(edge, result);
+                    }
                     return result; // mismatch: pattern not found
                 }
             } else {
@@ -184,6 +187,23 @@ public:
         // Pattern completely matched; now collect all leaf indices below current node.
         collectLeafIndices(current, result);
         return result;
+    }
+
+    // Helper that maps a global index to(refName, localPos, globalIndex)
+    // If not found, returns ("", -1, -1).
+    tuple<string, int, int> mapIndexToRef(int globalIdx) const {
+        for (auto& rb : refBoundaries) {
+            int start = get<0>(rb);
+            int end = get<1>(rb);
+            string name = get<2>(rb);
+            // end - start is the length (minus the terminator)
+            // But be consistent with how you stored boundaries.
+            if (globalIdx >= start && globalIdx < end) {
+                // local position is 1-based
+                return make_tuple(name, globalIdx - start + 1, globalIdx);
+            }
+        }
+        return make_tuple(string(""), -1, -1);
     }
 
     // Print the suffix tree in DOT format (for visualization).
@@ -196,18 +216,34 @@ public:
         function<void(SuffixTreeNode*)> dfs = [&](SuffixTreeNode* node) {
             int curId = idCounter++;
             nodeId[node] = curId;
+
+            // Build label for this node
             string label = "";
-            if (node->suffixIndex != -1)
-                label = to_string(node->suffixIndex);
+            if (node->suffixIndex != -1) {
+                // It's a leaf
+                auto [refName, localPos, globalPos] = mapIndexToRef(node->suffixIndex);
+                if (!refName.empty() && localPos != -1) {
+                    // e.g. "chr2:5:10"
+                    label = refName + ":" + to_string(localPos) + ":" + to_string(globalPos);
+                } else {
+                    // fallback if not found
+                    label = to_string(node->suffixIndex);
+                }
+            }
             dotFile << "node" << curId << " [label=\"" << label << "\"];\n";
-            for (auto& childPair : node->children) {
-                SuffixTreeNode* child = childPair.second;
+
+            // Recur for children
+            for (auto& ch : node->children) {
+                SuffixTreeNode* child = ch.second;
                 dfs(child);
                 int childId = nodeId[child];
+                // Edge label is the substring from child->start to *(child->end)
                 string edgeLabel = text.substr(child->start, *(child->end) - child->start + 1);
-                dotFile << "node" << curId << " -> node" << childId << " [label=\"" << edgeLabel << "\"];\n";
+                dotFile << "node" << curId << " -> node" << childId
+                    << " [label=\"" << edgeLabel << "\"];\n";
             }
             };
+
         dfs(root);
         dotFile << "}\n";
         dotFile.close();
@@ -221,20 +257,22 @@ private:
             freeTree(childPair.second);
         }
         // Only delete end pointer if it was allocated (i.e. not pointing to leafEnd)
-        if (node->end != &leafEnd)
+        if (node->end != &leafEnd) {
             delete node->end;
+        }
         delete node;
     }
 
     // Helper: collect suffix indices from all leaves in the subtree rooted at node.
     void collectLeafIndices(SuffixTreeNode* node, vector<int>& result) {
-        if (node == nullptr) return;
+        if (node == nullptr) { return; }
         if (node->suffixIndex != -1) {
             result.push_back(node->suffixIndex);
             return;
         }
-        for (auto& childPair : node->children)
+        for (auto& childPair : node->children) {
             collectLeafIndices(childPair.second, result);
+        }
     }
 };
 
@@ -273,8 +311,9 @@ int main(int argc, char** argv) {
     }
     string line, header, seq;
     while (getline(refIn, line)) {
-        if (line.empty())
+        if (line.empty()) {
             continue;
+        }
         if (line[0] == '>') {
             if (!header.empty()) {
                 references.push_back({ header, seq });
@@ -285,8 +324,9 @@ int main(int argc, char** argv) {
             seq += line;
         }
     }
-    if (!header.empty())
+    if (!header.empty()) {
         references.push_back({ header, seq });
+    }
     refIn.close();
 
     // Read the patterns FASTA file (assume header then pattern on next line)
@@ -300,7 +340,7 @@ int main(int argc, char** argv) {
     string pat;
     bool headerFlag = false;
     while (getline(patIn, line)) {
-        if (line.empty()) continue;
+        if (line.empty()) { continue; }
         if (line[0] == '>') {
             header = line.substr(1);
             headerFlag = true;
@@ -324,8 +364,9 @@ int main(int argc, char** argv) {
     if (numRefs > available.size()) {
         // If more references than available symbols, generate symbols from printable ASCII excluding A, C, G, T.
         for (char c = 33; c < 127 && terminators.size() < numRefs; c++) {
-            if (c != 'A' && c != 'C' && c != 'G' && c != 'T')
+            if (c != 'A' && c != 'C' && c != 'G' && c != 'T') {
                 terminators.push_back(c);
+            }
         }
     } else {
         for (int i = 0; i < numRefs; i++) {
@@ -344,7 +385,7 @@ int main(int argc, char** argv) {
     }
 
     // Build the suffix tree from the combined text.
-    SuffixTree st(combinedText);
+    SuffixTree st(combinedText, refBoundaries);
     st.build();
     st.setSuffixIndexByDFS(st.root, 0);
 
@@ -378,22 +419,26 @@ int main(int argc, char** argv) {
         map<string, vector<int>> occMap;
         for (int pos : occ) {
             auto info = mapIndexToRef(pos);
-            if (info.first != "")
+            if (info.first != "") {
                 occMap[info.first].push_back(info.second);
+            }
         }
-        for (auto& entry : occMap)
+        for (auto& entry : occMap) {
             sort(entry.second.begin(), entry.second.end());
+        }
 
         outFile << "(" << patHeader << ") - ";
         bool firstRef = true;
         for (auto& entry : occMap) {
-            if (!firstRef)
+            if (!firstRef) {
                 outFile << ", ";
+            }
             firstRef = false;
             outFile << entry.first << ":";
             for (size_t i = 0; i < entry.second.size(); i++) {
-                if (i > 0)
+                if (i > 0) {
                     outFile << ",";
+                }
                 outFile << entry.second[i];
             }
         }

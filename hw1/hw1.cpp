@@ -38,7 +38,7 @@ using namespace std;
 struct SuffixTreeNode {
     // Each edge is stored in a map from character to child node.
     map<char, SuffixTreeNode*> children;
-    SuffixTreeNode* suffixLink;
+    SuffixTreeNode* suffixLink; // Suffix link for Ukkonen's algorithm (not used in search)
     int start, * end; // For leaves, all share the same end pointer (leafEnd)
     int suffixIndex; // For leaves, stores starting index in the global text; for internal nodes, -1.
 
@@ -55,17 +55,16 @@ public:
     SuffixTreeNode* root;
     SuffixTreeNode* lastNewNode;
     SuffixTreeNode* activeNode;
-    int activeEdge;
-    int activeLength;
-    int remainingSuffixCount;
-    int leafEnd;       // Global end for all leaves (updated in each phase)
-    int* rootEnd;
-    int* splitEnd;
+    int activeEdge; // Index of the current character on the active edge
+    int activeLength; // Length of the active prefix
+    int remainingSuffixCount; // Number of suffixes yet to be added in the current phase
+    int leafEnd; // Global end for all leaves (updated in each phase)
+    int* rootEnd; // Pointer to the end of the root's edge (nullptr) 
+    int* splitEnd; // Pointer to the end of the split edge (updated in each phase)
 
-    SuffixTree(const string& text, const vector<tuple<int, int, string>>& boundaries) : text(text), referenceBoundaries(boundaries), root(nullptr), lastNewNode(nullptr), activeNode(nullptr),
+    SuffixTree(const string& text, const vector<tuple<int, int, string>>& referenceBoundaries) : text(text), referenceBoundaries(referenceBoundaries), lastNewNode(nullptr),
         activeEdge(-1), activeLength(0), remainingSuffixCount(0), leafEnd(-1), rootEnd(nullptr), splitEnd(nullptr) {
-        // Create root node with start = -1 and end = nullptr.
-        root = new SuffixTreeNode(-1, new int(-1));
+        root = new SuffixTreeNode(-1, new int(-1)); // Create root node with start = -1 and end = nullptr.
         activeNode = root;
     }
 
@@ -258,7 +257,7 @@ public:
 private:
     // Helper: recursively free nodes.
     void freeTree(SuffixTreeNode* node) {
-        if (node == nullptr) return;
+        if (node == nullptr) { return; }
         for (auto& childPair : node->children) {
             freeTree(childPair.second);
         }
@@ -319,7 +318,6 @@ vector<pair<string, string>>* readSequences(const string& filename) {
 //
 // Main function: parses command-line arguments, reads input FASTA files, builds the suffix tree,
 // searches for each pattern, and writes output files.
-//
 int main(int argc, char** argv) {
     string referenceFile, patternFile, outputPrefix;
     bool dotFlag = false;
@@ -371,8 +369,7 @@ int main(int argc, char** argv) {
     for (int i = 0; i < (int) references->size(); ++i) {
         int startIndex = combinedText.size();
         combinedText += (*references)[i].second;
-        // Append a unique terminator.
-        combinedText.push_back(terminators[i]);
+        combinedText.push_back(terminators[i]);// Append a unique terminator.
         int endIndex = combinedText.size() - 1; // includes terminator
         referenceBoundaries.push_back(make_tuple(startIndex, endIndex, (*references)[i].first));
         referenceStartIndices.push_back(startIndex);
@@ -381,7 +378,7 @@ int main(int argc, char** argv) {
     // Build the suffix tree from the combined text.
     SuffixTree st(combinedText, referenceBoundaries);
     st.build();
-    st.setSuffixIndexByDFS(st.root, 0);
+    st.setSuffixIndexByDFS(st.root, 0); // Set suffix indices for leaves using DFS.
 
     // A helper lambda to map a global index in combinedText to a reference header and a position.
     auto mapIndexToRef = [&](int idx) -> pair<string, int> {

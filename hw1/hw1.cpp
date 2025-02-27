@@ -1,6 +1,11 @@
 /*
  * Görkem Kadir Solun
  *
+ * To prepare the executable: make
+ * To clean the executable: make clean
+ * To run the executable: ./hw1 -r <reference_fasta> -p <pattern_fasta> -o <output_prefix>
+ *
+ *
  * A complete solution for the multiple pattern matching assignment.
  * This implementation builds a single suffix tree that holds all reference sequences
  * (each separated by a unique terminator) and then searches for each pattern.
@@ -13,7 +18,10 @@
  *   -d                   : Optional; if provided, outputs the suffix tree in DOT format.
  *
  * The implementation uses Ukkonen's algorithm for suffix tree construction.
- * It reports pattern occurrences per reference (using 1-indexed positions).
+ * It reports pattern occurrences per reference (using 0-indexed positions).
+ *
+ * The node leaf naming logic is slightly modified as the following to be suitable for single suffix tree
+ * <reference_name>:<1-based_start_index_in_that_reference>:<global_concat_index>
  */
 
 #include <iostream>
@@ -31,8 +39,7 @@ struct SuffixTreeNode {
     // Each edge is stored in a map from character to child node.
     map<char, SuffixTreeNode*> children;
     SuffixTreeNode* suffixLink;
-    int start;
-    int* end; // For leaves, all share the same end pointer (leafEnd)
+    int start, * end; // For leaves, all share the same end pointer (leafEnd)
     int suffixIndex; // For leaves, stores starting index in the global text; for internal nodes, -1.
 
     SuffixTreeNode(int start, int* end)
@@ -74,22 +81,22 @@ public:
         }
     }
 
-    // Ukkonen extension for phase pos
-    void extendSuffixTree(int pos) {
-        leafEnd = pos;
+    // Ukkonen extension for phase position
+    void extendSuffixTree(int position) {
+        leafEnd = position;
         ++remainingSuffixCount;
         lastNewNode = nullptr;
 
         while (remainingSuffixCount > 0) {
             if (activeLength == 0) {
-                activeEdge = pos; // current character index
+                activeEdge = position; // current character index
             }
 
             // Current character is activeEdge-th character on the activeNode
             // If there is no outgoing edge starting with text[activeEdge] from activeNode
             if (activeNode->children.find(text[activeEdge]) == activeNode->children.end()) {
                 // Create a new leaf edge
-                activeNode->children[text[activeEdge]] = new SuffixTreeNode(pos, &leafEnd);
+                activeNode->children[text[activeEdge]] = new SuffixTreeNode(position, &leafEnd);
 
                 // Add suffix link from last created internal node (if any)
                 if (lastNewNode != nullptr) {
@@ -106,8 +113,8 @@ public:
                     activeNode = next;
                     continue;
                 }
-                // Check if the current character on the edge is equal to text[pos]
-                if (text[next->start + activeLength] == text[pos]) {
+                // Check if the current character on the edge is equal to text[position]
+                if (text[next->start + activeLength] == text[position]) {
                     if (lastNewNode != nullptr && activeNode != root) {
                         lastNewNode->suffixLink = activeNode;
                         lastNewNode = nullptr;
@@ -120,7 +127,7 @@ public:
                 SuffixTreeNode* split = new SuffixTreeNode(next->start, splitEnd);
                 activeNode->children[text[activeEdge]] = split;
                 // New leaf for current character
-                split->children[text[pos]] = new SuffixTreeNode(pos, &leafEnd);
+                split->children[text[position]] = new SuffixTreeNode(position, &leafEnd);
                 next->start += activeLength;
                 split->children[text[next->start]] = next;
 
@@ -132,7 +139,7 @@ public:
             --remainingSuffixCount;
             if (activeNode == root && activeLength > 0) {
                 --activeLength;
-                activeEdge = pos - remainingSuffixCount + 1;
+                activeEdge = position - remainingSuffixCount + 1;
             } else if (activeNode != root) {
                 activeNode = (activeNode->suffixLink != nullptr) ? activeNode->suffixLink : root;
             }
@@ -197,8 +204,7 @@ public:
             // end - start is the length (minus the terminator)
             // But be consistent with how you stored boundaries.
             if (globalIdx >= start && globalIdx < end) {
-                // local position is 1-based
-                return make_tuple(name, globalIdx - start + 1, globalIdx);
+                return make_tuple(name, globalIdx - start, globalIdx);
             }
         }
         return make_tuple(string(""), -1, -1);
@@ -207,7 +213,7 @@ public:
     // Print the suffix tree in DOT format (for visualization).
     void printDot(const string& filename) {
         ofstream dotFile(filename);
-        dotFile << "digraph suffix_tree {\n";
+        dotFile << "digraph suffix_tree {" << endl;
         // Assign unique integer ids to nodes via DFS.
         map<SuffixTreeNode*, int> nodeId;
         int idCounter = 0;
@@ -230,7 +236,7 @@ public:
                     label = to_string(node->suffixIndex);
                 }
             }
-            dotFile << "node" << curId << " [label=\"" << label << "\"];\n";
+            dotFile << "node" << curId << " [label=\"" << label << "\"];" << endl;
 
             // Recur for children
             for (auto& ch : node->children) {
@@ -240,12 +246,12 @@ public:
                 // Edge label is the substring from child->start to *(child->end)
                 string edgeLabel = text.substr(child->start, *(child->end) - child->start + 1);
                 dotFile << "node" << curId << " -> node" << childId
-                    << " [label=\"" << edgeLabel << "\"];\n";
+                    << " [label=\"" << edgeLabel << "\"];" << endl;
             }
             };
 
         dfs(root);
-        dotFile << "}\n";
+        dotFile << "}" << endl;
         dotFile.close();
     }
 
@@ -288,6 +294,11 @@ vector<pair<string, string>>* readSequences(const string& filename) {
         if (line.empty()) {
             break;
         }
+
+        // Trim leading and trailing whitespaces
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+
         if (line[0] == '>') {
             if (!header.empty()) {
                 sequences->push_back({ header, seq });
@@ -372,7 +383,7 @@ int main(int argc, char** argv) {
     st.build();
     st.setSuffixIndexByDFS(st.root, 0);
 
-    // A helper lambda to map a global index in combinedText to a reference header and a 1-indexed position.
+    // A helper lambda to map a global index in combinedText to a reference header and a position.
     auto mapIndexToRef = [&](int idx) -> pair<string, int> {
         for (int i = 0; i < (int) referenceBoundaries.size(); ++i) {
             int start, end;
@@ -380,7 +391,7 @@ int main(int argc, char** argv) {
             tie(start, end, refHeader) = referenceBoundaries[i];
             // reference length = end - start, terminator is at the end
             if (idx >= start && idx < end) {
-                return { refHeader, idx - start + 1 };
+                return { refHeader, idx - start };
             }
         }
         return { "", -1 };
@@ -395,13 +406,11 @@ int main(int argc, char** argv) {
 
     // For each pattern, search in the suffix tree and group the results by reference.
     for (auto& p : (*patterns)) {
-        string patHeader = p.first;
-        string patSeq = p.second;
-        vector<int> occ = st.search(patSeq);
+        vector<int> occurrences = st.search(p.second);
         // Group occurrences by reference header.
         map<string, vector<int>> occurrenceMap;
-        for (int pos : occ) {
-            auto info = mapIndexToRef(pos);
+        for (int position : occurrences) {
+            auto info = mapIndexToRef(position);
             if (info.first != "") {
                 occurrenceMap[info.first].push_back(info.second);
             }
@@ -410,13 +419,13 @@ int main(int argc, char** argv) {
             sort(entry.second.begin(), entry.second.end());
         }
 
-        outputFile << "(" << patHeader << ") - ";
-        bool firstRef = true;
+        outputFile << "(" << p.first << ") - ";
+        bool isFirstReference = true;
         for (auto& entry : occurrenceMap) {
-            if (!firstRef) {
+            if (!isFirstReference) {
                 outputFile << ", ";
             }
-            firstRef = false;
+            isFirstReference = false;
             outputFile << entry.first << ":";
             for (size_t i = 0; i < entry.second.size(); ++i) {
                 if (i > 0) {
@@ -425,7 +434,7 @@ int main(int argc, char** argv) {
                 outputFile << entry.second[i];
             }
         }
-        outputFile << "\n";
+        outputFile << endl;
     }
     outputFile.close();
 

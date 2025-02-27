@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++11
+CXXFLAGS = -Wall -Wextra -std=c++17
 TARGET = hw1
 SRC = hw1.cpp
 OBJ = $(SRC:.cpp=.o)

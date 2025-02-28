@@ -20,3 +20,5 @@ It reports pattern occurrences per reference (using 0-indexed positions).
 
 The node leaf naming logic is slightly modified as the following to be suitable for single suffix tree
 <reference_name>:<1-based_start_index_in_that_reference>:<global_concat_index>
+
+I recommend transforming the output.dot file into a .svg instead of .png.

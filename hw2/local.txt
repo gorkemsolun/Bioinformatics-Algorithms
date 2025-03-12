@@ -1,6 +1,6 @@
 Highest local alignment score:
 pattern=ATCAAGCGTCGGCATATGGC
-text=ATCAGCGATCATCGGCATAT
+reference=ATCAGCGATCATCGGCATAT
 Score =11
 CIGAR =3M1D4M4I9M
 MD:Z=17

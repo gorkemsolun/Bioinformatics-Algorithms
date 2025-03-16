@@ -57,9 +57,9 @@ string prepareCigarString(const vector<char>& alignmentResult) {
     }
     string cigar = "";
     int count = 1;
-    char current = alignmentResult[0];
+    char current = alignmentResult.back();
     // NOTE: Start from last element -1, as the input is reversed.
-    for (size_t i = alignmentResult.size() - 2; i >= 0; --i) {
+    for (int i = alignmentResult.size() - 2; i >= 0; --i) {
         if (alignmentResult[i] == current) {
             ++count;
         } else {
@@ -72,46 +72,38 @@ string prepareCigarString(const vector<char>& alignmentResult) {
     return cigar;
 }
 
-string prepareMDZString(const string& pattern, const string& reference) {
+// TODO: Fix this function to handle deletions correctly.
+string prepareMDZString(const string& alignedPattern, const string& alignedReference, vector<char>& tracebacks) {
+    reverse(tracebacks.begin(), tracebacks.end());
+    cout << "tracebacks: " << string(tracebacks.begin(), tracebacks.end()) << endl;
     string mdz = "";
     int matchCount = 0;
     size_t i = 0;
-    while (i < pattern.size()) {
-        if (pattern[i] != '-' && reference[i] != '-') { // diagonal move: either match or mismatch
-            if (pattern[i] == reference[i]) {
+    while (i < tracebacks.size()) {
+        if (tracebacks[i] == 'M') {
+            // Diagonal move, match or mismatch.
+            if (alignedPattern[i] == alignedReference[i]) {
                 ++matchCount;
             } else {
-                // mismatch: output count then the mismatching base from the reference.
+                // Mismatch
                 mdz += to_string(matchCount);
-                mdz += reference[i];
+                mdz.push_back(alignedReference[i]);
                 matchCount = 0;
             }
             ++i;
-        } else if (pattern[i] == '-' && reference[i] != '-') {
-            // Insertion in read relative to reference (gap in pattern): not recorded in MD:Z.
-            ++i;
-        } else if (pattern[i] != '-' && reference[i] == '-') {
-            // Deletion from the reference: output current count, then '^' followed by the deleted base.
+        } else if (tracebacks[i] == 'D') {
+            // Left move, deletion.
             mdz += to_string(matchCount);
-            mdz += "^";
-            // For consecutive deletions, collect them.
-            while (i < pattern.size() && reference[i] == '-') {
-                // Note: the deleted base comes from the reference.
-                // To recover the actual base from reference we need to look at reference from before the gap.
-                // However, in our traceback, the letter is “lost”. One strategy is to keep the reference letter from
-                // the DP cell that led to the gap. For simplicity, assume the reference stored the base (if any).
-                // Here we assume a deletion is indicated by a '-' in reference,
-                // so we cannot recover the base. In a real implementation, you’d store the deleted base separately.
-                // For our example, we simulate by outputting a placeholder (e.g., 'N'). 
-                // Alternatively, if you build the alignment correctly, the deletion operation should record the letter.
-                // For this sample, we assume our traceback step (for deletion) appends the missing base manually.
-                // (See note below in the traceback function.)
-                mdz += "N"; // placeholder if needed
+            mdz.push_back('^');
+            matchCount = 0;
+            string deletedBases = "";
+            while (i < tracebacks.size() && tracebacks[i] == 'D') {
+                deletedBases.push_back(alignedReference[i]);
                 ++i;
             }
-            matchCount = 0;
+            mdz += deletedBases;
         } else {
-            // Should not reach here.
+            // Up move, insertion or unexpected character in CIGAR/traceback.
             ++i;
         }
     }
@@ -119,64 +111,67 @@ string prepareMDZString(const string& pattern, const string& reference) {
     return mdz;
 }
 
-AlignmentResult* globalAlignmentNeedlemanWunsch(const string& pattern, const string& reference, int matchScore, int mismatchScore, int gapPenalty) {
-    vector<vector<int>> dp(pattern.size() + 1, vector<int>(reference.size() + 1, 0));
-    vector<vector<char>> traceback(pattern.size() + 1, vector<char>(reference.size() + 1, ' '));
+AlignmentResult* globalAlignmentNeedlemanWunsch(const string& patterns, const string& references, int matchScore, int mismatchScore, int gapPenalty) {
+    vector<vector<int>> dp(patterns.size() + 1, vector<int>(references.size() + 1, 0));
+    vector<vector<char>> traceback(patterns.size() + 1, vector<char>(references.size() + 1, ' '));
 
     AlignmentResult* result = new AlignmentResult();
 
     // For global alignment, we need to initialize the first row and column with gap penalties.
-    for (size_t i = 0; i <= pattern.size(); ++i) {
+    for (size_t i = 0; i <= patterns.size(); ++i) {
         dp[i][0] = i * gapPenalty;
         if (i > 0) {
             traceback[i][0] = 'u';
         }
     }
-    for (size_t j = 0; j <= reference.size(); ++j) {
+    for (size_t j = 0; j <= references.size(); ++j) {
         dp[0][j] = j * gapPenalty;
         if (j > 0) {
             traceback[0][j] = 'l';
         }
     }
 
-    for (size_t i = 1; i <= pattern.size(); ++i) {
-        for (size_t j = 1; j <= reference.size(); ++j) {
-            int diagonal = dp[i - 1][j - 1] + (pattern[i - 1] == reference[j - 1] ? matchScore : mismatchScore);
+    for (size_t i = 1; i <= patterns.size(); ++i) {
+        for (size_t j = 1; j <= references.size(); ++j) {
             int up = dp[i - 1][j] + gapPenalty;
             int left = dp[i][j - 1] + gapPenalty;
-            dp[i][j] = diagonal;
+            dp[i][j] = dp[i - 1][j - 1] + (patterns[i - 1] == references[j - 1] ? matchScore : mismatchScore); // Diagonal move
 
             // Record
             traceback[i][j] = 'd';
-            if (up > dp[i][j]) {
-                dp[i][j] = up; traceback[i][j] = 'u';
-            }
             if (left > dp[i][j]) {
-                dp[i][j] = left; traceback[i][j] = 'l';
+                dp[i][j] = left;
+                traceback[i][j] = 'l';
             }
+            if (up > dp[i][j]) {
+                dp[i][j] = up;
+                traceback[i][j] = 'u';
+            }
+
         }
     }
 
-    size_t trace_i = pattern.size(), trace_j = reference.size(); // For global alignment, start from the end. (bottom-right)
+    size_t trace_i = patterns.size(), trace_j = references.size(); // For global alignment, start from the end. (bottom-right)
     result->alignedPattern = "";
     result->alignedReference = "";
     vector<char> tracebacks;
 
     while (trace_i > 0 || trace_j > 0) {
         if (trace_i > 0 && trace_j > 0 && traceback[trace_i][trace_j] == 'd') {
-            result->alignedPattern.push_back(pattern[trace_i - 1]);
-            result->alignedReference.push_back(reference[trace_j - 1]);
+            result->alignedPattern.push_back(patterns[trace_i - 1]);
+            result->alignedReference.push_back(references[trace_j - 1]);
             tracebacks.push_back('M');
-            --trace_i; --trace_j;
+            --trace_i;
+            --trace_j;
         } else if (trace_i > 0 && traceback[trace_i][trace_j] == 'u') {
-            result->alignedPattern.push_back(pattern[trace_i - 1]);
-            result->alignedReference.push_back((trace_j < reference.size()) ? reference[trace_j] : 'N');
-            tracebacks.push_back('D');
+            result->alignedPattern.push_back(patterns[trace_i - 1]);
+            result->alignedReference.push_back('-');
+            tracebacks.push_back('I');
             --trace_i;
         } else if (trace_j > 0 && traceback[trace_i][trace_j] == 'l') {
             result->alignedPattern.push_back('-');
-            result->alignedReference.push_back(reference[trace_j - 1]);
-            tracebacks.push_back('I');
+            result->alignedReference.push_back(references[trace_j - 1]);
+            tracebacks.push_back('D');
             --trace_j;
         }
     }
@@ -184,15 +179,15 @@ AlignmentResult* globalAlignmentNeedlemanWunsch(const string& pattern, const str
     reverse(result->alignedPattern.begin(), result->alignedPattern.end());
     reverse(result->alignedReference.begin(), result->alignedReference.end());
 
-    result->score = dp[pattern.size()][reference.size()];
+    result->score = dp[patterns.size()][references.size()];
     result->cigar = prepareCigarString(tracebacks); // Prepare CIGAR string from traceback(reverse).
-    result->mdz = prepareMDZString(result->alignedPattern, result->alignedReference);
+    result->mdz = prepareMDZString(result->alignedPattern, result->alignedReference, tracebacks);
     return result;
 }
 
-AlignmentResult* localAlignmentSmithWaterman(const string& pattern, const string& reference, int matchScore, int mismatchScore, int gapPenalty) {
-    vector<vector<int>> dp(pattern.size() + 1, vector<int>(reference.size() + 1, 0));
-    vector<vector<char>> traceback(pattern.size() + 1, vector<char>(reference.size() + 1, ' '));
+AlignmentResult* localAlignmentSmithWaterman(const string& patterns, const string& references, int matchScore, int mismatchScore, int gapPenalty) {
+    vector<vector<int>> dp(patterns.size() + 1, vector<int>(references.size() + 1, 0));
+    vector<vector<char>> traceback(patterns.size() + 1, vector<char>(references.size() + 1, ' '));
 
     // For local alignment, we need to initialize the first row and column with 0.
     // The rest of the matrix is initialized with -infinity. (used 0 for simplicity)
@@ -203,10 +198,10 @@ AlignmentResult* localAlignmentSmithWaterman(const string& pattern, const string
     result->score = 0; // Keep track of the maximum score in local alignment as we need to find the best alignment.
     size_t trace_i = 0, trace_j = 0; // Keep track of the position of the maximum score to start the traceback.
 
-    for (size_t i = 1; i <= pattern.size(); ++i) {
-        for (size_t j = 1; j <= reference.size(); ++j) {
+    for (size_t i = 1; i <= patterns.size(); ++i) {
+        for (size_t j = 1; j <= references.size(); ++j) {
             // Compute scores for possible moves. 0, diagonal, up, left respectively.
-            int diagonal = dp[i - 1][j - 1] + (pattern[i - 1] == reference[j - 1] ? matchScore : mismatchScore);
+            int diagonal = dp[i - 1][j - 1] + (patterns[i - 1] == references[j - 1] ? matchScore : mismatchScore);
             int up = dp[i - 1][j] + gapPenalty;
             int left = dp[i][j - 1] + gapPenalty;
             dp[i][j] = max(0, max(diagonal, max(up, left)));
@@ -239,19 +234,20 @@ AlignmentResult* localAlignmentSmithWaterman(const string& pattern, const string
     vector<char> tracebacks;
     while (trace_i > 0 && trace_j > 0 && dp[trace_i][trace_j] != 0) {
         if (traceback[trace_i][trace_j] == 'd') {
-            result->alignedPattern.push_back(pattern[trace_i - 1]);
-            result->alignedReference.push_back(reference[trace_j - 1]);
+            result->alignedPattern.push_back(patterns[trace_i - 1]);
+            result->alignedReference.push_back(references[trace_j - 1]);
             tracebacks.push_back('M');
-            --trace_i; --trace_j;
+            --trace_i;
+            --trace_j;
         } else if (traceback[trace_i][trace_j] == 'u') {
-            result->alignedPattern.push_back(pattern[trace_i - 1]);
-            result->alignedReference.push_back((trace_j < reference.size()) ? reference[trace_j] : 'N');
-            tracebacks.push_back('D');
+            result->alignedPattern.push_back(patterns[trace_i - 1]);
+            result->alignedReference.push_back('-');
+            tracebacks.push_back('I');
             --trace_i;
         } else if (traceback[trace_i][trace_j] == 'l') {
             result->alignedPattern.push_back('-');
-            result->alignedReference.push_back(reference[trace_j - 1]);
-            tracebacks.push_back('I');
+            result->alignedReference.push_back(references[trace_j - 1]);
+            tracebacks.push_back('D');
             --trace_j;
         }
     }
@@ -260,14 +256,14 @@ AlignmentResult* localAlignmentSmithWaterman(const string& pattern, const string
     reverse(result->alignedReference.begin(), result->alignedReference.end());
 
     result->cigar = prepareCigarString(tracebacks); // Prepare CIGAR string from traceback(reverse).
-    result->mdz = prepareMDZString(result->alignedPattern, result->alignedReference);
+    result->mdz = prepareMDZString(result->alignedPattern, result->alignedReference, tracebacks);
     return result;
 }
 
 int overlapLongestExactMatch(const string& alignedPattern, const string& alignedReference) {
     int maxMatch = 0, current = 0;
     for (size_t i = 0; i < alignedPattern.size(); ++i) {
-        if (alignedPattern[i] != '-' && alignedReference[i] != 'N' && alignedPattern[i] == alignedReference[i]) {
+        if (alignedPattern[i] != '-' && alignedReference[i] != '-' && alignedPattern[i] == alignedReference[i]) {
             ++current;
             maxMatch = max(maxMatch, current);
         } else {
@@ -306,6 +302,14 @@ int main(int argc, char* argv[]) {
         }
     }
 
+
+    /*
+    // TODO: FOR MANUAL TESTING
+    bool global = true, local = false;
+    string patternFile = "patterns.fasta", referenceFile = "texts.fasta", outputFileName = "output.txt";
+    int matchScore = 1, mismatchScore = -1, gapPenalty = -1;
+    */
+
     vector<string> patterns = readFasta(patternFile);
     vector<string> references = readFasta(referenceFile);
     if (patterns.size() != references.size()) {
@@ -313,8 +317,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-
     vector<AlignmentResult*> results;
+    // Score is used for local alignment, overlap is used as score for global alignment.
     int bestScore = -1000000, bestIndex = -1;
 
     for (size_t i = 0; i < patterns.size(); ++i) {
@@ -339,6 +343,7 @@ int main(int argc, char* argv[]) {
                 bestResult = results[i];
                 bestIndex = i;
             }
+
         } else {
             if (results[i]->score > bestScore) {
                 bestScore = results[i]->score;
@@ -346,6 +351,19 @@ int main(int argc, char* argv[]) {
                 bestIndex = i;
             }
         }
+
+        // TODO: REMOVE THIS BLOCK FOR FINAL VERSION
+        cout << "Pattern " << i + 1 << ":" << endl;
+        cout << "pattern: " << patterns[i] << endl;
+        cout << "reference: " << references[i] << endl;
+        cout << "pattern size: " << patterns[i].size() << endl;
+        cout << "reference size: " << references[i].size() << endl;
+        cout << "cigar: " << results[i]->cigar << endl;
+        cout << "aligned pat: " << results[i]->alignedPattern << endl;
+        cout << "aligned ref: " << results[i]->alignedReference << endl;
+        cout << "mdz: " << results[i]->mdz << endl;
+        cout << "score: " << results[i]->score << endl;
+        cout << endl;
     }
 
     ofstream outputFile(outputFileName.c_str());

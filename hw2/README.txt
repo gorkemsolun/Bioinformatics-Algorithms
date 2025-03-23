@@ -6,6 +6,8 @@ and constructs the CIGAR and MD:Z strings using a traceback of the alignment mat
 The pair with the longest overlap (for global alignment) or highest alignment score (for local alignment)
 is written to the output file.
 
+Algorithms are implemented using the course slides and Wikipedia.
+
 Usage:
   ./hw2 -g|-l -p <patterns.fasta> -t <texts.fasta> -o <output.txt> -s <match> <mismatch> <gap>
 

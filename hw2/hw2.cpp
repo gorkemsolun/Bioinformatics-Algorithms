@@ -31,6 +31,12 @@ vector<string> readFasta(const string& filename) {
     }
     string line, sequence = "";
     while (getline(input_file, line)) {
+        // Remove any trailing carriage returns or whitespace to ensure the sequence is clean.
+        if (!line.empty()) {
+            while (!line.empty() && (line.back() == '\r' || isspace(line.back()))) {
+                line.pop_back();
+            }
+        }
         if (line.empty()) {
             continue;
         }
@@ -39,7 +45,6 @@ vector<string> readFasta(const string& filename) {
                 sequences.push_back(sequence);
                 sequence = "";
             }
-            continue;
         } else {
             sequence += line;
         }
@@ -72,10 +77,9 @@ string prepareCigarString(const vector<char>& alignmentResult) {
     return cigar;
 }
 
-// TODO: Fix this function to handle deletions correctly.
 string prepareMDZString(const string& alignedPattern, const string& alignedReference, vector<char>& tracebacks) {
     reverse(tracebacks.begin(), tracebacks.end());
-    cout << "tracebacks: " << string(tracebacks.begin(), tracebacks.end()) << endl;
+    // cout << "tracebacks: " << string(tracebacks.begin(), tracebacks.end()) << endl;
     string mdz = "";
     int matchCount = 0;
     size_t i = 0;
@@ -98,7 +102,7 @@ string prepareMDZString(const string& alignedPattern, const string& alignedRefer
             matchCount = 0;
             string deletedBases = "";
             while (i < tracebacks.size() && tracebacks[i] == 'D') {
-                deletedBases.push_back(alignedReference[i]);
+                deletedBases.push_back(alignedPattern[i]);
                 ++i;
             }
             mdz += deletedBases;
@@ -166,12 +170,12 @@ AlignmentResult* globalAlignmentNeedlemanWunsch(const string& patterns, const st
         } else if (trace_i > 0 && traceback[trace_i][trace_j] == 'u') {
             result->alignedPattern.push_back(patterns[trace_i - 1]);
             result->alignedReference.push_back('-');
-            tracebacks.push_back('I');
+            tracebacks.push_back('D');
             --trace_i;
         } else if (trace_j > 0 && traceback[trace_i][trace_j] == 'l') {
             result->alignedPattern.push_back('-');
             result->alignedReference.push_back(references[trace_j - 1]);
-            tracebacks.push_back('D');
+            tracebacks.push_back('I');
             --trace_j;
         }
     }
@@ -242,12 +246,12 @@ AlignmentResult* localAlignmentSmithWaterman(const string& patterns, const strin
         } else if (traceback[trace_i][trace_j] == 'u') {
             result->alignedPattern.push_back(patterns[trace_i - 1]);
             result->alignedReference.push_back('-');
-            tracebacks.push_back('I');
+            tracebacks.push_back('D');
             --trace_i;
         } else if (traceback[trace_i][trace_j] == 'l') {
             result->alignedPattern.push_back('-');
             result->alignedReference.push_back(references[trace_j - 1]);
-            tracebacks.push_back('D');
+            tracebacks.push_back('I');
             --trace_j;
         }
     }
@@ -352,7 +356,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // TODO: REMOVE THIS BLOCK FOR FINAL VERSION
+        /* // TODO: REMOVE THIS BLOCK FOR THE FINAL VERSION
         cout << "Pattern " << i + 1 << ":" << endl;
         cout << "pattern: " << patterns[i] << endl;
         cout << "reference: " << references[i] << endl;
@@ -363,7 +367,7 @@ int main(int argc, char* argv[]) {
         cout << "aligned ref: " << results[i]->alignedReference << endl;
         cout << "mdz: " << results[i]->mdz << endl;
         cout << "score: " << results[i]->score << endl;
-        cout << endl;
+        cout << endl; */
     }
 
     ofstream outputFile(outputFileName.c_str());

@@ -9,6 +9,7 @@ is written to the output file.
 Algorithms are implemented using the course slides and Wikipedia.
 
 Usage:
+  make
   ./hw2 -g|-l -p <patterns.fasta> -t <texts.fasta> -o <output.txt> -s <match> <mismatch> <gap>
 
 Example:

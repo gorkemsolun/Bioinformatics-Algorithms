@@ -12,78 +12,78 @@
 
 using namespace std;
 
-#define INT_MIN -2000000000 // Redefine a minimum integer value for initialization as we may use scores < 0.
+#define INT_MIN_Redefined INT_MIN + 1000000000 // Redefine a minimum integer value for initialization as we may use scores < 0.
 
-// Affine-gap global alignment using three matrices: M, F, and E
+// Affine-gap global alignment using three matrices: V, F, and E
 // https://docs.google.com/presentation/d/15urWu7TXmdQ5ocRs-k2O5zGPXaHu-oehhpGND3S_SbE/edit?slide=id.p38#slide=id.p38
-// M: match/mismatch matrix (merged version of V and G matrices in the slides)
+// V: match/mismatch matrix (merged version of V and G matrices in the slides)
 // F: matrix for vertical gaps
 // E: matrix for horizontal gaps
-pair<string, string> affine_alignment(const string& string1, const string& string2,
-    int match, int mismatch,
-    int gap_open, int gap_extend,
-    int* alignment_score_out = nullptr) {
+void affine_alignment(const string& string1, const string& string2,
+    int matchScore, int mismatchScore,
+    int gapOpeningScore, int gapExtensionScore,
+    int* alignmentScore = nullptr, string* alignmentString1 = nullptr, string* alignmentString2 = nullptr) {
 
-    vector<vector<int>> M(string1.size() + 1, vector<int>(string2.size() + 1, INT_MIN));  // M: match/mismatch (merged version of V and G)
-    vector<vector<int>> F(string1.size() + 1, vector<int>(string2.size() + 1, INT_MIN));  // F: vertical gap (gap in string2)
-    vector<vector<int>> E(string1.size() + 1, vector<int>(string2.size() + 1, INT_MIN));  // E: horizontal gap (gap in string1)
+    vector<vector<int>> V(string1.size() + 1, vector<int>(string2.size() + 1, INT_MIN_Redefined));  // V: match/mismatch (merged version of V and G)
+    vector<vector<int>> F(string1.size() + 1, vector<int>(string2.size() + 1, INT_MIN_Redefined));  // F: vertical gap (gap in string2)
+    vector<vector<int>> E(string1.size() + 1, vector<int>(string2.size() + 1, INT_MIN_Redefined));  // E: horizontal gap (gap in string1)
 
-    // For M: 0 indicates coming from M, 1 from F, 2 from E.
-    vector<vector<int>> traceM(string1.size() + 1, vector<int>(string2.size() + 1, -1));
-    // For F: 0 indicates coming from M (vertical gap starting), 1 from F (gap extension).
+    // 0 indicates coming from V, 1 from F, 2 from E.
+    vector<vector<int>> traceV(string1.size() + 1, vector<int>(string2.size() + 1, -1));
+    // 0 indicates coming from V (vertical gap starting), 1 from F (gap extension).
     vector<vector<int>> traceF(string1.size() + 1, vector<int>(string2.size() + 1, -1));
-    // For E: 0 indicates coming from M (horizontal gap starting), 1 from E (gap extension).
+    // 0 indicates coming from V (horizontal gap starting), 1 from E (gap extension).
     vector<vector<int>> traceE(string1.size() + 1, vector<int>(string2.size() + 1, -1));
 
 
-    M[0][0] = 0;
-    F[0][0] = E[0][0] = INT_MIN;
-    for (int i = 1; i <= string1.size(); ++i) {
-        M[i][0] = INT_MIN;
-        F[i][0] = gap_open + gap_extend * (i - 1);
+    V[0][0] = 0;
+    F[0][0] = E[0][0] = INT_MIN_Redefined;
+    for (size_t i = 1; i <= string1.size(); ++i) {
+        V[i][0] = INT_MIN_Redefined;
+        F[i][0] = gapOpeningScore + gapExtensionScore * (i - 1);
         traceF[i][0] = (i == 1 ? 0 : 1);
-        E[i][0] = INT_MIN;
+        E[i][0] = INT_MIN_Redefined;
     }
-    for (int j = 1; j <= string2.size(); ++j) {
-        M[0][j] = INT_MIN;
-        E[0][j] = gap_open + gap_extend * (j - 1);
+    for (size_t j = 1; j <= string2.size(); ++j) {
+        V[0][j] = INT_MIN_Redefined;
+        E[0][j] = gapOpeningScore + gapExtensionScore * (j - 1);
         traceE[0][j] = (j == 1 ? 0 : 1);
-        F[0][j] = INT_MIN;
+        F[0][j] = INT_MIN_Redefined;
     }
 
-    for (int i = 1; i <= string1.size(); ++i) {
-        for (int j = 1; j <= string2.size(); ++j) {
-            int score_sub = (string1[i - 1] == string2[j - 1]) ? match : mismatch;
+    for (size_t i = 1; i <= string1.size(); ++i) {
+        for (size_t j = 1; j <= string2.size(); ++j) {
+            int score_sub = (string1[i - 1] == string2[j - 1]) ? matchScore : mismatchScore;
 
-            M[i][j] = M[i - 1][j - 1] + score_sub;
-            traceM[i][j] = 0;
-            if (F[i - 1][j - 1] + score_sub > M[i][j]) {
-                M[i][j] = F[i - 1][j - 1] + score_sub;
-                traceM[i][j] = 1;
+            V[i][j] = V[i - 1][j - 1] + score_sub;
+            traceV[i][j] = 0;
+            if (F[i - 1][j - 1] + score_sub > V[i][j]) {
+                V[i][j] = F[i - 1][j - 1] + score_sub;
+                traceV[i][j] = 1;
             }
-            if (E[i - 1][j - 1] + score_sub > M[i][j]) {
-                M[i][j] = E[i - 1][j - 1] + score_sub;
-                traceM[i][j] = 2;
+            if (E[i - 1][j - 1] + score_sub > V[i][j]) {
+                V[i][j] = E[i - 1][j - 1] + score_sub;
+                traceV[i][j] = 2;
             }
 
-            F[i][j] = M[i - 1][j] + gap_open + gap_extend;
+            F[i][j] = V[i - 1][j] + gapOpeningScore + gapExtensionScore;
             traceF[i][j] = 0;
-            if (F[i - 1][j] + gap_extend > F[i][j]) {
-                F[i][j] = F[i - 1][j] + gap_extend;
+            if (F[i - 1][j] + gapExtensionScore > F[i][j]) {
+                F[i][j] = F[i - 1][j] + gapExtensionScore;
                 traceF[i][j] = 1;
             }
 
-            E[i][j] = M[i][j - 1] + gap_open + gap_extend;
+            E[i][j] = V[i][j - 1] + gapOpeningScore + gapExtensionScore;
             traceE[i][j] = 0;
-            if (E[i][j - 1] + gap_extend > E[i][j]) {
-                E[i][j] = E[i][j - 1] + gap_extend;
+            if (E[i][j - 1] + gapExtensionScore > E[i][j]) {
+                E[i][j] = E[i][j - 1] + gapExtensionScore;
                 traceE[i][j] = 1;
             }
         }
     }
 
-    int finalState = 0; // 0: M, 1: F, 2: E
-    int bestScore = M[string1.size()][string2.size()];
+    int finalState = 0; // 0: V, 1: F, 2: E
+    int bestScore = V[string1.size()][string2.size()];
     if (F[string1.size()][string2.size()] > bestScore) {
         bestScore = F[string1.size()][string2.size()];
         finalState = 1;
@@ -92,18 +92,20 @@ pair<string, string> affine_alignment(const string& string1, const string& strin
         bestScore = E[string1.size()][string2.size()];
         finalState = 2;
     }
-    if (alignment_score_out) {
-        *alignment_score_out = bestScore;
+    if (alignmentScore) {
+        *alignmentScore = bestScore;
     }
 
+    if (alignmentString1 == nullptr || alignmentString2 == nullptr) {
+        return;
+    }
     int i = string1.size(), j = string2.size();
-    string alignment1 = "", alignment2 = "";
     int state = finalState;
     while (i > 0 || j > 0) {
-        if (state == 0) { // M
-            int prev = traceM[i][j];
-            alignment1.push_back(string1[i - 1]);
-            alignment2.push_back(string2[j - 1]);
+        if (state == 0) { // V
+            int prev = traceV[i][j];
+            alignmentString1->push_back(string1[i - 1]);
+            alignmentString2->push_back(string2[j - 1]);
             --i; --j;
             state = prev;
         } else if (state == 1) { // F
@@ -112,8 +114,8 @@ pair<string, string> affine_alignment(const string& string1, const string& strin
             } else {
                 state = 1;
             }
-            alignment1.push_back(string1[i - 1]);
-            alignment2.push_back('-');
+            alignmentString1->push_back(string1[i - 1]);
+            alignmentString2->push_back('-');
             --i;
         } else { // E 
             if (traceE[i][j] == 0) {
@@ -121,22 +123,20 @@ pair<string, string> affine_alignment(const string& string1, const string& strin
             } else {
                 state = 2;
             }
-            alignment1.push_back('-');
-            alignment2.push_back(string2[j - 1]);
+            alignmentString1->push_back('-');
+            alignmentString2->push_back(string2[j - 1]);
             --j;
         }
     }
 
-    reverse(alignment1.begin(), alignment1.end());
-    reverse(alignment2.begin(), alignment2.end());
-    return { alignment1, alignment2 };
+    reverse(alignmentString1->begin(), alignmentString1->end());
+    reverse(alignmentString2->begin(), alignmentString2->end());
 }
 
-// Read a FASTA file and return a vector of (name, sequence) pairs.
 vector<pair<string, string>> readFASTA(const string& filename) {
     ifstream in(filename);
     if (!in) {
-        cerr << "Error: Could not open file " << filename << endl;
+        cout << "Error: Could not open file " << filename << endl;
         exit(1);
     }
 
@@ -165,52 +165,11 @@ vector<pair<string, string>> readFASTA(const string& filename) {
     return sequences;
 }
 
-// Given an aligned center string and the original center,
-// compute the gap pattern as a vector<int> for each gap slot.
-vector<int> compute_gap_pattern(const string& alignedCenter, const string& center) {
-    vector<int> pattern(center.size() + 1, 0);
-    int position = 0;
-    for (size_t i = 0; i < alignedCenter.size(); ++i) {
-        if (alignedCenter[i] == '-') {
-            ++pattern[position];
-        } else {
-            ++position;
-        }
-    }
-    return pattern;
-}
-
-// From a pairwise alignment, extract the mapping for the other sequence.
-vector<char> compute_other_mapping(const string& alignedCenter, const string& alignedOther, const string& center) {
-    vector<char> mapping;
-    int position = 0;
-    for (size_t i = 0; i < alignedCenter.size(); ++i) {
-        if (alignedCenter[i] != '-') {
-            mapping.push_back(alignedOther[i]);
-            ++position;
-        }
-    }
-    return mapping;
-}
-
-// Merge a sequence with its gap pattern to produce the final aligned string.
-string merge_with_master(const string& sequence, const vector<int>& pattern, const vector<int>& masterGap) {
-    string result;
-    for (int k = 0; k <= sequence.size(); ++k) {
-        int extra = masterGap[k] - pattern[k];
-        result.append(extra, '-');
-        if (k < sequence.size()) {
-            result.push_back(sequence[k]);
-        }
-    }
-    return result;
-}
-
 // Merge the mapping for sequences aligned to the center with the master gap pattern.
-string merge_with_master_mapping(const vector<char>& mapping, const vector<int>& pattern, const vector<int>& masterGap) {
+string merge_with_master_mapping(const vector<char>& mapping, const vector<int>& pattern, const vector<int>& mergedGap) {
     string result;
-    for (int k = 0; k <= mapping.size(); ++k) {
-        int extra = masterGap[k] - pattern[k];
+    for (size_t k = 0; k <= mapping.size(); ++k) {
+        int extra = mergedGap[k] - pattern[k];
         result.append(extra, '-');
         if (k < mapping.size()) {
             result.push_back(mapping[k]);
@@ -221,12 +180,11 @@ string merge_with_master_mapping(const vector<char>& mapping, const vector<int>&
 
 int main(int argc, char* argv[]) {
     if (argc < 7) {
-        cerr << "Usage: " << argv[0] << " -i input.fasta -o output.phy -s match:mismatch:gap_open:gap_extend" << endl;
-        return 1;
+        cout << "Usage: " << argv[0] << " -i input.fasta -o output.phy -s matchScore:mismatchScore:gapOpeningScore:gapExtensionScore" << endl;
+        return 0;
     }
 
     string inputFile, outputFile, scoresStr;
-    // Command-line argument parsing.
     for (int i = 1; i < argc; ++i) {
         string arg = argv[i];
         if (arg == "-i" && i + 1 < argc) {
@@ -236,38 +194,36 @@ int main(int argc, char* argv[]) {
         } else if (arg == "-s" && i + 1 < argc) {
             scoresStr = argv[++i];
         } else {
-            cerr << "Unknown argument: " << arg << endl;
-            return 1;
+            cout << "Unknown argument: " << arg << endl;
+            return 0;
         }
     }
 
-    // Parse the score string, expected in the format "match:mismatch:gap_open:gap_extend"
-    int match, mismatch, gap_open, gap_extend;
+    int matchScore, mismatchScore, gapOpeningScore, gapExtensionScore;
     {
-        vector<int> vals;
+        vector<int> values;
         stringstream ss(scoresStr);
         string token;
         while (getline(ss, token, ':')) {
-            vals.push_back(stoi(token));
+            values.push_back(stoi(token));
         }
-        if (vals.size() != 4) {
-            cerr << "Error: Score must have four values separated by ':'" << endl;
-            return 1;
+        if (values.size() != 4) {
+            cout << "Error: Score must have four values separated by ':'" << endl;
+            return 0;
         }
-        match = vals[0];
-        mismatch = vals[1];
-        gap_open = vals[2];
-        gap_extend = vals[3];
+        matchScore = values[0];
+        mismatchScore = values[1];
+        gapOpeningScore = values[2];
+        gapExtensionScore = values[3];
     }
 
-    // Read the FASTA sequences.
     vector<pair<string, string>> fasta = readFASTA(inputFile);
     if (fasta.size() == 0) {
-        cerr << "No sequences found in " << inputFile << endl;
-        return 1;
+        cout << "No sequences found in " << inputFile << endl;
+        return 0;
     }
 
-    // If there is only one sequence, output it in PHYLIP format.
+    // if there is only one sequence
     if (fasta.size() == 1) {
         ofstream out(outputFile);
         string sequence = fasta[0].second;
@@ -277,79 +233,107 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // Step 1: Select the center sequence using pairwise alignment scores.
+    // Compute sim(Si, Sj) for every pair (i,j)
     vector<int> sumScores(fasta.size(), 0);
-    for (int i = 0; i < fasta.size(); ++i) {
-        for (int j = i + 1; j < fasta.size(); ++j) {
-            int score = 0;
-            affine_alignment(fasta[i].second, fasta[j].second, match, mismatch, gap_open, gap_extend, &score);
-            sumScores[i] += score;
-            sumScores[j] += score;
+    for (size_t i = 0; i < fasta.size(); ++i) {
+        for (size_t j = i + 1; j < fasta.size(); ++j) {
+            int alignmentScore = 0;
+            affine_alignment(fasta[i].second, fasta[j].second, matchScore, mismatchScore, gapOpeningScore, gapExtensionScore, &alignmentScore);
+            // Compute star_score(i) for every i
+            sumScores[i] += alignmentScore;
+            sumScores[j] += alignmentScore;
         }
     }
 
-    int centerIndex = 0;
+    // Choose the index c that maximizes star_score(c)  and make it the center of the star
+    size_t centerSequenceIndex = 0;
     int bestSum = sumScores[0];
-    for (int i = 1; i < fasta.size(); ++i) {
+    for (size_t i = 1; i < fasta.size(); ++i) {
         if (sumScores[i] > bestSum) {
             bestSum = sumScores[i];
-            centerIndex = i;
+            centerSequenceIndex = i;
         }
     }
 
-    string centerSeq = fasta[centerIndex].second;
-    int centerLength = centerSeq.size();
+    // Produce a multiple alignment such that, for every i, the induced pairwise alignment of Sc and Si is the same as the optimum alignment of Sc and Si.
+    vector<vector<int>> gapPatterns(fasta.size(), vector<int>(fasta[centerSequenceIndex].second.size() + 1, 0));
+    vector<vector<char>> mappings(fasta.size(), vector<char>());
 
-    // Step 2: Align all sequences to the center.
-    vector< vector<int> > gapPatterns(fasta.size(), vector<int>(centerLength + 1, 0));
-    vector< vector<char> > mappings(fasta.size(), vector<char>());
-
-    // For the center itself.
-    mappings[centerIndex].resize(centerLength);
-    for (int k = 0; k < centerLength; ++k) {
-        mappings[centerIndex][k] = centerSeq[k];
+    // Center
+    mappings[centerSequenceIndex].resize(fasta[centerSequenceIndex].second.size());
+    for (size_t k = 0; k < fasta[centerSequenceIndex].second.size(); ++k) {
+        mappings[centerSequenceIndex][k] = fasta[centerSequenceIndex].second[k];
     }
 
-    // For every other sequence, perform pairwise alignment with the center.
-    for (int i = 0; i < fasta.size(); ++i) {
-        if (i == centerIndex) {
+    // Others
+    for (size_t i = 0; i < fasta.size(); ++i) {
+        if (i == centerSequenceIndex) {
             continue;
         }
-        auto alignmentPair = affine_alignment(centerSeq, fasta[i].second,
-            match, mismatch, gap_open, gap_extend);
-        string alignedCenter = alignmentPair.first;
-        string alignedOther = alignmentPair.second;
-        gapPatterns[i] = compute_gap_pattern(alignedCenter, centerSeq);
-        mappings[i] = compute_other_mapping(alignedCenter, alignedOther, centerSeq);
+        string* alignedCenter = new string;
+        string* alignedOther = new string;
+        affine_alignment(fasta[centerSequenceIndex].second, fasta[i].second,
+            matchScore, mismatchScore, gapOpeningScore, gapExtensionScore, nullptr, alignedCenter, alignedOther);
+        cout << "Alignment of " << fasta[centerSequenceIndex].first << " and " << fasta[i].first << ":" << endl;
+        cout << *alignedCenter << "\n" << *alignedOther << endl;
+
+        int position = 0;
+        for (size_t j = 0; j < alignedCenter->size(); ++j) {
+            if ((*alignedCenter)[j] == '-') {
+                ++gapPatterns[i][position];
+            } else {
+                mappings[i].push_back((*alignedOther)[j]); // for the other sequence
+                ++position;
+            }
+        }
+
+        delete alignedCenter;
+        delete alignedOther;
     }
 
-    // Step 3: Merge gap patterns from all pairwise alignments to create the master gap pattern.
-    vector<int> masterGap(centerLength + 1, 0);
-    for (int i = 0; i < fasta.size(); ++i) {
-        for (int k = 0; k <= centerLength; ++k) {
-            masterGap[k] = max(masterGap[k], gapPatterns[i][k]);
+    // Merge gap patterns from all pairwise alignments
+    vector<int> mergedGap(fasta[centerSequenceIndex].second.size() + 1, 0);
+    for (size_t i = 0; i < fasta.size(); ++i) {
+        for (size_t k = 0; k <= fasta[centerSequenceIndex].second.size(); ++k) {
+            mergedGap[k] = max(mergedGap[k], gapPatterns[i][k]);
         }
     }
 
-    // Step 4: Build the final aligned strings for all sequences using the master gap pattern.
-    vector<string> finalAlign(fasta.size(), "");
-    finalAlign[centerIndex] = merge_with_master(centerSeq, gapPatterns[centerIndex], masterGap);
-    for (int i = 0; i < fasta.size(); ++i) {
-        if (i == centerIndex) { continue; }
-        finalAlign[i] = merge_with_master_mapping(mappings[i], gapPatterns[i], masterGap);
+    // Final alignment for each sequence
+    vector<string> finalAlignment(fasta.size(), "");
+    for (size_t k = 0; k <= fasta[centerSequenceIndex].second.size(); ++k) {
+        int extra = mergedGap[k] - gapPatterns[centerSequenceIndex][k];
+        finalAlignment[centerSequenceIndex].append(extra, '-');
+        if (k < fasta[centerSequenceIndex].second.size()) {
+            finalAlignment[centerSequenceIndex].push_back(fasta[centerSequenceIndex].second[k]);
+        }
+    }
+    for (size_t i = 0; i < fasta.size(); ++i) {
+        if (i == centerSequenceIndex) {
+            continue;
+        }
+        for (size_t k = 0; k <= mappings[i].size(); ++k) {
+            int extra = mergedGap[k] - gapPatterns[i][k];
+            finalAlignment[i].append(extra, '-');
+            if (k < mappings[i].size()) {
+                finalAlignment[i].push_back(mappings[i][k]);
+            }
+        }
     }
 
-    int finalLength = finalAlign[centerIndex].size();
+    // Swap the center sequence with the first sequence in the output
+    swap(finalAlignment[0], finalAlignment[centerSequenceIndex]);
+    swap(fasta[0], fasta[centerSequenceIndex]);
 
-    // Step 5: Write the multiple sequence alignment in PHYLIP format.
     ofstream out(outputFile);
     if (!out) {
-        cerr << "Error: Could not open output file " << outputFile << endl;
-        return 1;
+        cout << "Error: Could not open output file " << outputFile << endl;
+        return 0;
     }
-    out << fasta.size() << " " << finalLength << "\n";
-    for (int i = 0; i < fasta.size(); ++i) {
-        out << fasta[i].first << " " << finalAlign[i] << "\n";
+
+    out << fasta.size() << " " << finalAlignment[centerSequenceIndex].size() << "\n";
+    for (size_t i = 0; i < fasta.size(); ++i) {
+        out << fasta[i].first << " " << finalAlignment[i] << "\n";
     }
     out.close();
 

@@ -165,19 +165,6 @@ vector<pair<string, string>> readFASTA(const string& filename) {
     return sequences;
 }
 
-// Merge the mapping for sequences aligned to the center with the master gap pattern.
-string merge_with_master_mapping(const vector<char>& mapping, const vector<int>& pattern, const vector<int>& mergedGap) {
-    string result;
-    for (size_t k = 0; k <= mapping.size(); ++k) {
-        int extra = mergedGap[k] - pattern[k];
-        result.append(extra, '-');
-        if (k < mapping.size()) {
-            result.push_back(mapping[k]);
-        }
-    }
-    return result;
-}
-
 int main(int argc, char* argv[]) {
     if (argc < 7) {
         cout << "Usage: " << argv[0] << " -i input.fasta -o output.phy -s matchScore:mismatchScore:gapOpeningScore:gapExtensionScore" << endl;
@@ -216,6 +203,13 @@ int main(int argc, char* argv[]) {
         gapOpeningScore = values[2];
         gapExtensionScore = values[3];
     }
+
+    /* string inputFile = "input.fasta";
+    string outputFile = "output.phy";
+    int matchScore = 5;
+    int mismatchScore = -4;
+    int gapOpeningScore = -16;
+    int gapExtensionScore = -4; */
 
     vector<pair<string, string>> fasta = readFASTA(inputFile);
     if (fasta.size() == 0) {
@@ -257,13 +251,7 @@ int main(int argc, char* argv[]) {
 
     // Produce a multiple alignment such that, for every i, the induced pairwise alignment of Sc and Si is the same as the optimum alignment of Sc and Si.
     vector<vector<int>> gapPatterns(fasta.size(), vector<int>(fasta[centerSequenceIndex].second.size() + 1, 0));
-    vector<vector<char>> mappings(fasta.size(), vector<char>());
-
-    // Center
-    mappings[centerSequenceIndex].resize(fasta[centerSequenceIndex].second.size());
-    for (size_t k = 0; k < fasta[centerSequenceIndex].second.size(); ++k) {
-        mappings[centerSequenceIndex][k] = fasta[centerSequenceIndex].second[k];
-    }
+    vector<string*> alignedOthers(fasta.size(), nullptr);
 
     // Others
     for (size_t i = 0; i < fasta.size(); ++i) {
@@ -282,13 +270,12 @@ int main(int argc, char* argv[]) {
             if ((*alignedCenter)[j] == '-') {
                 ++gapPatterns[i][position];
             } else {
-                mappings[i].push_back((*alignedOther)[j]); // for the other sequence
                 ++position;
             }
         }
 
         delete alignedCenter;
-        delete alignedOther;
+        alignedOthers[i] = alignedOther;
     }
 
     // Merge gap patterns from all pairwise alignments
@@ -300,24 +287,24 @@ int main(int argc, char* argv[]) {
     }
 
     // Final alignment for each sequence
+    // Final alignment for the center sequence
     vector<string> finalAlignment(fasta.size(), "");
     for (size_t k = 0; k <= fasta[centerSequenceIndex].second.size(); ++k) {
-        int extra = mergedGap[k] - gapPatterns[centerSequenceIndex][k];
-        finalAlignment[centerSequenceIndex].append(extra, '-');
+        finalAlignment[centerSequenceIndex].append(mergedGap[k] - gapPatterns[centerSequenceIndex][k], '-');
         if (k < fasta[centerSequenceIndex].second.size()) {
             finalAlignment[centerSequenceIndex].push_back(fasta[centerSequenceIndex].second[k]);
         }
     }
+    // Combining the aligned sequences with the merged gap pattern
     for (size_t i = 0; i < fasta.size(); ++i) {
         if (i == centerSequenceIndex) {
             continue;
         }
-        for (size_t k = 0; k <= mappings[i].size(); ++k) {
-            int extra = mergedGap[k] - gapPatterns[i][k];
-            finalAlignment[i].append(extra, '-');
-            if (k < mappings[i].size()) {
-                finalAlignment[i].push_back(mappings[i][k]);
+        for (size_t k = 0; k <= alignedOthers[i]->size(); ++k) {
+            if (k < alignedOthers[i]->size()) {
+                finalAlignment[i].push_back((*alignedOthers[i])[k]);
             }
+            finalAlignment[i].append(mergedGap[k] - gapPatterns[i][k], '-');
         }
     }
 
@@ -333,7 +320,23 @@ int main(int argc, char* argv[]) {
 
     out << fasta.size() << " " << finalAlignment[centerSequenceIndex].size() << "\n";
     for (size_t i = 0; i < fasta.size(); ++i) {
-        out << fasta[i].first << " " << finalAlignment[i] << "\n";
+        string sequenceId = fasta[i].first;
+        if (sequenceId.size() > 10) {
+            sequenceId = sequenceId.substr(0, 10);
+        } else if (sequenceId.size() < 10) {
+            sequenceId.append(10 - sequenceId.size(), ' ');
+        }
+        out << sequenceId;
+
+        // Add a space every 10 characters
+        out << finalAlignment[i][0];
+        for (size_t j = 1; j < finalAlignment[i].size(); ++j) {
+            if (j % 10 == 0) {
+                out << " ";
+            }
+            out << finalAlignment[i][j];
+        }
+        out << "\n";
     }
     out.close();
 

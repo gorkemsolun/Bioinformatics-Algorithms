@@ -9,11 +9,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <limits>
-#include <chrono>
 #include <climits>
-#if defined(__unix__) || defined(__APPLE__)
-#  include <sys/resource.h>
-#endif
 
 using namespace std;
 
@@ -171,8 +167,6 @@ vector<pair<string, string>> readFASTA(const string& filename) {
 }
 
 int main(int argc, char* argv[]) {
-    auto start_time = chrono::high_resolution_clock::now();
-
     if (argc < 7) {
         cout << "Usage: " << argv[0] << " -i input.fasta -o output.phy -s matchScore:mismatchScore:gapOpeningScore:gapExtensionScore" << endl;
         return 0;
@@ -370,17 +364,5 @@ int main(int argc, char* argv[]) {
         delete alignedOthers[i];
     }
 
-    auto end_time = chrono::high_resolution_clock::now();
-    auto elapsed = chrono::duration_cast<chrono::milliseconds>(end_time - start_time).count();
-    cout << "Execution time: " << elapsed << " ms\n";
-
-#if defined(__unix__) || defined(__APPLE__)
-    struct rusage usage;
-    getrusage(RUSAGE_SELF, &usage);
-    long mem_kb = usage.ru_maxrss;
-    cerr << "Max memory usage: " << mem_kb << " KB\n";
-#else
-    cerr << "Max memory usage: N/A on this platform\n";
-#endif
     return 0;
 }

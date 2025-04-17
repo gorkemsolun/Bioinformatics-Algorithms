@@ -9,10 +9,15 @@
 #include <algorithm>
 #include <cstdlib>
 #include <limits>
+#include <chrono>
+#include <climits>
+#if defined(__unix__) || defined(__APPLE__)
+#  include <sys/resource.h>
+#endif
 
 using namespace std;
 
-#define INT_MIN_Redefined INT_MIN + 1000000000 // Redefine a minimum integer value for initialization as we may use scores < 0.
+static constexpr int INT_MIN_Redefined = std::numeric_limits<int>::min() / 2;// Redefine a minimum integer value for initialization as we may use scores < 0.
 
 // Affine-gap global alignment using three matrices: V, F, and E
 // https://docs.google.com/presentation/d/15urWu7TXmdQ5ocRs-k2O5zGPXaHu-oehhpGND3S_SbE/edit?slide=id.p38#slide=id.p38
@@ -166,6 +171,8 @@ vector<pair<string, string>> readFASTA(const string& filename) {
 }
 
 int main(int argc, char* argv[]) {
+    auto start_time = chrono::high_resolution_clock::now();
+
     if (argc < 7) {
         cout << "Usage: " << argv[0] << " -i input.fasta -o output.phy -s matchScore:mismatchScore:gapOpeningScore:gapExtensionScore" << endl;
         return 0;
@@ -252,6 +259,7 @@ int main(int argc, char* argv[]) {
     // Produce a multiple alignment such that, for every i, the induced pairwise alignment of Sc and Si is the same as the optimum alignment of Sc and Si.
     vector<vector<int>> gapPatterns(fasta.size(), vector<int>(fasta[centerSequenceIndex].second.size() + 1, 0));
     vector<string*> alignedOthers(fasta.size(), nullptr);
+    vector<string*> alignedCenters(fasta.size(), nullptr);
 
     // Others
     for (size_t i = 0; i < fasta.size(); ++i) {
@@ -262,8 +270,8 @@ int main(int argc, char* argv[]) {
         string* alignedOther = new string;
         affine_alignment(fasta[centerSequenceIndex].second, fasta[i].second,
             matchScore, mismatchScore, gapOpeningScore, gapExtensionScore, nullptr, alignedCenter, alignedOther);
-        cout << "Alignment of " << fasta[centerSequenceIndex].first << " and " << fasta[i].first << ":" << endl;
-        cout << *alignedCenter << "\n" << *alignedOther << endl;
+        /* cout << "Alignment of " << fasta[centerSequenceIndex].first << " and " << fasta[i].first << ":" << endl;
+        cout << *alignedCenter << "\n" << *alignedOther << endl; */
 
         int position = 0;
         for (size_t j = 0; j < alignedCenter->size(); ++j) {
@@ -274,7 +282,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        delete alignedCenter;
+        alignedCenters[i] = alignedCenter;
         alignedOthers[i] = alignedOther;
     }
 
@@ -300,12 +308,28 @@ int main(int argc, char* argv[]) {
         if (i == centerSequenceIndex) {
             continue;
         }
-        for (size_t k = 0; k <= alignedOthers[i]->size(); ++k) {
-            if (k < alignedOthers[i]->size()) {
-                finalAlignment[i].push_back((*alignedOthers[i])[k]);
+        // Make a loop for comparing the previously aligned center and final alignment center
+        size_t finalCenterIndex = 0, otherCenterIndex = 0;
+        while (finalCenterIndex < finalAlignment[centerSequenceIndex].size() && otherCenterIndex < alignedCenters[i]->size()) {
+            if (finalAlignment[centerSequenceIndex][finalCenterIndex] == (*alignedCenters[i])[otherCenterIndex]) {
+                finalAlignment[i].push_back((*alignedOthers[i])[otherCenterIndex]);
+                ++finalCenterIndex;
+                ++otherCenterIndex;
+            } else if (finalAlignment[centerSequenceIndex][finalCenterIndex] == '-') {
+                finalAlignment[i].push_back('-');
+                ++finalCenterIndex;
+            } else {
+                finalAlignment[i].push_back((*alignedOthers[i])[otherCenterIndex]);
+                ++otherCenterIndex;
             }
-            finalAlignment[i].append(mergedGap[k] - gapPatterns[i][k], '-');
         }
+
+        // If there are still characters in the aligned center sequence, add them to the final alignment
+        while (finalCenterIndex < finalAlignment[centerSequenceIndex].size()) {
+            finalAlignment[i].push_back('-');
+            ++finalCenterIndex;
+        }
+
     }
 
     // Swap the center sequence with the first sequence in the output
@@ -318,7 +342,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    out << fasta.size() << " " << finalAlignment[centerSequenceIndex].size() << "\n";
+    out << fasta.size() << " " << finalAlignment[0].size() << "\n";
     for (size_t i = 0; i < fasta.size(); ++i) {
         string sequenceId = fasta[i].first;
         if (sequenceId.size() > 10) {
@@ -340,5 +364,23 @@ int main(int argc, char* argv[]) {
     }
     out.close();
 
+    // Free allocated memory
+    for (size_t i = 0; i < fasta.size(); ++i) {
+        delete alignedCenters[i];
+        delete alignedOthers[i];
+    }
+
+    auto end_time = chrono::high_resolution_clock::now();
+    auto elapsed = chrono::duration_cast<chrono::milliseconds>(end_time - start_time).count();
+    cout << "Execution time: " << elapsed << " ms\n";
+
+#if defined(__unix__) || defined(__APPLE__)
+    struct rusage usage;
+    getrusage(RUSAGE_SELF, &usage);
+    long mem_kb = usage.ru_maxrss;
+    cerr << "Max memory usage: " << mem_kb << " KB\n";
+#else
+    cerr << "Max memory usage: N/A on this platform\n";
+#endif
     return 0;
 }

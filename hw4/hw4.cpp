@@ -72,10 +72,10 @@ pair<string*, string*> needleman_wunsch(const string& sequence1, const string& s
 }
 
 int main(int argc, char* argv[]) {
-    /* if (argc < 7) {
+    if (argc < 7) {
         cerr << "Usage: " << argv[0] << " -i <input.fasta> -t <tree.txt> -s <match> <mismatch> <gap>\n";
         return 1;
-    } */
+    }
 
     string inputFile = "input.fasta", outputFile = "tree.txt";
     int matchScore = 1, mismatchScore = -1, gapScore = -1;
@@ -109,6 +109,9 @@ int main(int argc, char* argv[]) {
     while (getline(input_file_stream, line)) {
         if (line.empty()) {
             continue;
+        }
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
         }
         if (line[0] == '>') {
             if (!currentId.empty()) {
@@ -161,8 +164,6 @@ int main(int argc, char* argv[]) {
         clusters[i].size = 1;
         clusters[i].height = 0.0;
         clusters[i].newick = sequences[i].first;
-
-        cout << "31 " << clusters[i].newick << " 31" << endl;
     }
 
     // UPGMA
@@ -187,7 +188,6 @@ int main(int argc, char* argv[]) {
 
         merged.newick = "(" + clusters[iMin].newick + ":" + to_string(abs(merged.height - clusters[iMin].height))
             + "," + clusters[jMin].newick + ":" + to_string(abs(merged.height - clusters[jMin].height)) + ")";
-        cout << endl << "31 " << merged.newick << " 31" << endl;
 
 
         vector<Cluster> newClusters;
@@ -234,8 +234,6 @@ int main(int argc, char* argv[]) {
     }
 
     outputFileStream << tree << endl;
-    cout << tree << endl;
-    cout << clusters.size() << endl;
     outputFileStream.close();
 
     return 0;

@@ -166,7 +166,7 @@ int main(int argc, char* argv[]) {
         clusters[i].newick = sequences[i].first;
     }
 
-    // UPGMA
+    // UPGMA https://docs.google.com/presentation/d/1c626-ISa8nqAHmxN0_Pf7r6LUAC9KyTkYrfAX_a3xH8/edit?slide=id.p29#slide=id.p29
     while (clusters.size() - 1) {
         double minDistance = numeric_limits<double>::infinity();
 
